@@ -1,73 +1,66 @@
 # Midnight
 
-Experimental astronomy extensions for [Magic Lantern](https://github.com/reticulatedpines/magiclantern_simplified), targeting **Canon 600D firmware 1.0.2** and **Canon 6D firmware 1.1.6**.
+Star focusing and plate solving for [Magic Lantern](https://github.com/reticulatedpines/magiclantern_simplified) on **Canon 600D (firmware 1.0.2)** and **Canon 6D (firmware 1.1.6)**.
 
-**Developer prototype. Not tested on a physical camera.** Use a spare bootable SD card and retain a known-working one.
+> **Experimental:** Neither camera has been hardware-tested. Use a spare SD card and keep your working Magic Lantern card unchanged. Start with the read-only focusing tools.
 
-## Install prebuilt firmware
+## Install
 
-**Requirements:** Canon **600D with firmware 1.0.2**, or Canon **6D with firmware 1.1.6**, an SD-card reader, and a charged battery. Check the camera firmware in Canon's **MENU → Firmware Ver.** Do not install a package for a different camera or firmware version.
+1. On the camera, check **Menu → Firmware Ver.** Only the versions above are supported.
+2. Back up your card. Download the matching ZIP from the [Midnight release](https://github.com/mistrjirka/midnight/releases/tag/v0.1.0-alpha.1).
+3. **Already using Magic Lantern?** Extract the **entire ZIP** to the root of a **spare Magic Lantern-bootable SD card**, replacing the existing Magic Lantern files. Do not run the installer again.
+4. **Starting with a new card?** Format the spare SD card in the camera, extract the ZIP to its root, then run **Menu → Firmware Ver. → Firmware Update** in **M mode** to start the included **ML-SETUP.FIR**. Follow the installer instructions and restart. This is Magic Lantern setup, not a Canon firmware upgrade.
+5. Open Magic Lantern with the **Delete/Trash** button. Under **Modules**, enable **astro**, then restart the camera.
 
-1. **Back up your SD card** and use a **spare card** for Midnight. Keep your existing working Magic Lantern card unchanged.
-2. Download the matching ZIP from the [Midnight releases](https://github.com/mistrjirka/midnight/releases/tag/v0.1.0-alpha.1). Select `magiclantern-astro-600D.102.zip` or `magiclantern-astro-6D.116.zip`.
-3. **If the spare SD card already boots Magic Lantern:** Copy the **entire contents** of the Midnight ZIP to the **root** of that card. Merge/replace its existing Magic Lantern files, including `autoexec.bin`, `ML/`, and the matching module symbol file. Do **not** rerun the firmware installer on an already working card.
-4. **If the card does not yet boot Magic Lantern:** Format the spare card **in the camera**, then copy the ZIP contents to the card root. With the card inserted and the camera in **M** mode, use **MENU → Firmware Ver. → Firmware Update** to run the included `ML-SETUP.FIR` installer. Follow its on-screen instructions, wait for confirmation, and restart the camera. This prepares the card for Magic Lantern. It is **not a Canon firmware upgrade**. Do not continue if the camera model or firmware version does not match.
-5. Eject the SD card safely, insert it, and start the camera. Open Magic Lantern with the **Delete/Trash** button.
-6. Open **Modules**, enable `astro`, and **restart** the camera. The new tools appear under **Focus → Astro tools**.
+The ZIP already contains **astro.mo**, the matching camera symbol file, the star catalog (**ML/ASTRO/STARS.BIN**), and a test image. Do not copy just the module into an unrelated Magic Lantern build.
 
-The SD-card root should contain these files and folders (alongside any existing `DCIM/` and `MISC/`):
+## Use the new features
 
-```text
-SD card/
-├── autoexec.bin
-├── ML-SETUP.FIR
-└── ML/
-    ├── modules/astro.mo
-    ├── modules/600D_102.sym  (600D only; 6D uses 6D_116.sym)
-    └── ASTRO/
-        ├── STARS.BIN
-        └── TEST.PGM
-```
+Open **Magic Lantern → Focus → Astro tools**.
 
-### First safe tests
+<img src="docs/images/astro-tools-menu.png" alt="Illustrated Astro tools menu showing the feature names" width="600">
 
-1. In **Live View**, open **Focus → Astro tools → Measure star only**. This reads the sharpness of a visible star **without moving the lens**.
-2. For continuous manual focusing, enable **Manual focus readout** in the same submenu. The score updates about once per second. **Lower is sharper** when comparing the *same star* at the *same zoom*.
-3. To test plate solving without a sensor image, choose **Solve test PGM**. Use pointing hint **RA 05:00, Dec +35°** and frame width **6.4°**. The test frame and star catalog are already in the ZIP.
-4. For real **Solve LiveView**, use **1× Live View** and enter an approximate sky position. Field width defaults to the electronically reported lens focal length; set it manually if the lens does not report one. This is **hinted**, not blind, plate solving.
+*The interface images below are mockups based on the implemented UI. They are not screenshots from a physical camera.*
 
-**Leave autofocus shortcuts off and avoid "Auto focus star" until the motor behavior is validated on your specific lens.** The software builds and simulated fault tests pass, but no physical camera has been tested. The solver uses Live View rather than a long-exposure RAW frame, so faint fields may not solve.
+### Manual star focusing (works without autofocus)
 
-### If the camera does not boot
+1. Enable **Live View** and zoom to **5× or 10×** on a bright star.
+2. Enable **Manual focus readout** in Astro tools.
+3. Turn the focus ring until the on-screen **Star focus** value is as low as possible.
 
-Turn the camera off, remove the SD card, and try booting without it. If the camera is unresponsive, remove and reinsert the battery with the card removed. Restore your known-working card if needed. A bootable Magic Lantern card **without a matching `autoexec.bin` can cause a startup hang**. Do not delete that file from a bootable card.
+The value refreshes about once per second. Compare it only for the **same star and zoom level**. If you see **No star**, choose a brighter star or improve its visibility. For a one-time reading without the overlay, select **Measure star only**. Neither option moves the lens motor.
 
-See the [Magic Lantern installation and recovery notes](https://magiclantern.fandom.com/wiki/Unified/Install) and [Midnight development notes](ASTRO_DEVELOPMENT.md) for further limitations.
+<img src="docs/images/manual-focus-preview.png" alt="Illustrative Live View with a star sharpness score" width="600">
 
-## Features
+### Automatic star focusing
 
-- Guarded star autofocus with lens movement confirmation and fail-closed error handling.
-- Manual-focus sharpness score in Live View, even without an autofocus lens.
-- Hinted plate solver with a small SD-card star catalog.
-- Field width estimated from Canon sensor size and electronic focal length. Manual override for non-electronic lenses.
-- Synthetic PGM test action for emulator development.
+1. Center a bright star in **5×/10× Live View**.
+2. Set the lens switch to **AF** and turn off continuous/servo AF.
+3. Select **Auto focus star**. The camera makes small electronic focus steps, measures the same star, then reports a result.
 
-The image source is 8-bit Live View, not a long-exposure RAW capture. Very faint stars may be missed. Bahtinov diffraction spike offset fitting is not yet implemented.
+The routine stops when it cannot confirm lens movement or loses the star. **Motor behavior is still untested on physical cameras**, so use this only after confirming safe operation with your lens. Start with **Motor step size = 1** and **Focus radius = 3**.
 
-## Build
+**Focus shortcut** defaults to **Off**. You can optionally choose **INFO button** or **Double half-press**. Avoid conflicts with Trap Focus or other button assignments.
 
-This repository is a **reproducible Magic Lantern source overlay**. The script downloads a pinned upstream revision, copies the astronomy module, applies the integration patch, runs tests and builds both cameras. Canon proprietary firmware is not distributed.
+### Plate solving (find where the camera points)
 
-Linux dependencies: git, curl, Python 3, arm-none-eabi GCC/binutils, newlib headers, python3-docutils.
+1. Use **1× Live View** with several visible stars.
+2. Set an approximate sky position using **Pointing RA hour**, **Pointing RA minute**, and **Pointing Dec deg**. You can find these values in Stellarium.
+3. Leave **Frame width (0.1 deg) = 0** to estimate field of view from an electronic lens. For a manual lens, enter the horizontal width in tenths of a degree, for example **64 = 6.4°**.
+4. Select **Solve LiveView** and check **Last result** for RA/Dec.
 
-Run: bash scripts/build.sh
+<img src="docs/images/plate-solving-preview.png" alt="Illustrative plate-solving coordinates shown in Astro tools" width="600">
 
-Result: dist/magiclantern-astro-600D.102.zip and dist/magiclantern-astro-6D.116.zip.
+**Test without the sky:** Select **Solve test PGM** with RA **05:00**, Dec **+35°**, and frame width **64** (or leave it at 0 for this built-in test). The test image is included in the ZIP.
 
-The Actions workflow publishes experimental builds as artifacts and attempts a prerelease.
+This is **hinted plate solving**, not blind solving. It uses ordinary Live View, **not a long-exposure RAW image**. Faint star fields may not contain enough visible stars to solve.
 
-Detailed safety notes and testing: [ASTRO_DEVELOPMENT.md](ASTRO_DEVELOPMENT.md).
+## If the camera does not boot
 
-## Licensing
+Turn it off, remove the SD card, and try starting without it. If necessary, remove and reinsert the battery with the card removed. Return to your known-working SD card. Do **not** remove **autoexec.bin** from a bootable Magic Lantern card.
 
-Midnight and Magic Lantern source: GPL-2.0-or-later. Star catalog: HYG v4.1, David Nash / Astronexus, CC BY-SA 4.0.
+## For developers
+
+[Source, build instructions, tests, and limitations](ASTRO_DEVELOPMENT.md) · [Reproducible build script](scripts/build.sh)
+
+Midnight and Magic Lantern code: GPL-2.0-or-later. Star catalog: HYG v4.1, David Nash / Astronexus, CC BY-SA 4.0.
