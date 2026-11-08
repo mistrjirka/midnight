@@ -30,9 +30,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="v0.2.1-alpha.1"
+          tag="v0.2.2-alpha.1"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/magiclantern-astro-*.zip --clobber
           else
-            gh release create "$tag" dist/magiclantern-astro-*.zip --prerelease --title "Midnight indexed plate solver and focus tools" --notes "EXPERIMENTAL. 5 degree x 5 degree indexed star catalog reduces SD reads. 600D QEMU test matched 9 stars. Displays RA and Dec separately. Autofocus untested on physical cameras. Blind plate solving not included. Use a spare SD card."
+            gh release create "$tag" dist/magiclantern-astro-*.zip --prerelease --title "Midnight default focus shortcut and 600D QEMU photo tests" --notes "EXPERIMENTAL. DISP on 600D and LCD light on 6D act as focus shortcuts in photo LiveView. Turn this off in Astronomy settings to restore normal buttons. 600D QEMU solves processed user star field with 16 matched stars. Physical camera and autofocus motor not tested. Blind solving not implemented. Use a spare SD card."
           fi

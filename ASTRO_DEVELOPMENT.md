@@ -45,7 +45,7 @@ python3 modules/astro/tools/package.py 6D.116 .astro-data/STARS.BIN
    tested on hardware**. Inspect firmware compatibility and lens behavior
    before exercising it. The autofocus switch must be in AF mode and
    continuous AF disabled. Focus with a bright star in magnified LiveView.
-8. Optional autofocus shortcut: **Off / Double half-press / INFO button**.
+8. Focus shortcut defaults **ON** for 600D DISP and 6D LCD-light in photo Live View. Manual-focus lenses toggle the readout. Options: Off / Double half-press / INFO / DISP-LIGHT. Choosing Off restores the original button behavior.
    Off is default. This does not modify Trap Focus. Conflicts are possible
    with existing shortcut controls.
 
@@ -124,3 +124,19 @@ tile to an offset and length. No per-tile files or hash collisions.
 62 sky fields returned the same candidate stars as a full scan.
 At 200mm, the 600D example needs 772/99,049 stars loaded (128.3x
 less record I/O). These are bytes/records, not an on-camera timing.
+
+## Real-photo camera VM regression
+
+600D QEMU with Canon ROM: after converting IMG_7975 CR2 preview to a
+360x240 grayscale PGM, Midnight's on-camera solver matched 16 stars.
+Result RA 05:20:28, Dec +33d52m12s. Astrometry.net reference on
+the original larger preview: RA 05:20:26, Dec +33d51m56s.
+This test loads a PGM through the virtual SD card, NOT a raw file or
+a photograph taken directly by the camera firmware.
+
+IMG_6446 photo with a bright diagonal trail did not solve in QEMU,
+even with the correct approximate RA/Dec hint and FOV. The same scene
+did solve independently in Astrometry.net. This reveals a real
+robustness limitation of Midnight's star detection on trail-heavy photos.
+
+No photographic user data or ROM dumps are distributed in this repo.

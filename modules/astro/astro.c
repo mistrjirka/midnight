@@ -22,6 +22,7 @@
 #include <string.h>
 #include "astro_core.h"
 #include "astro_focus_control.h"
+#include "astro_shortcut.h"
 
 #define IM_W 360
 #define IM_H 240
@@ -35,7 +36,7 @@ static CONFIG_INT("astro.hint_dec", hint_dec, 35);
 static CONFIG_INT("astro.fov10", fov10, 0);  /* 0 auto from lens focal length */
 static CONFIG_INT("astro.step", focus_step, 1); /* Canon focus motor speed 1..3 */
 static CONFIG_INT("astro.scanradius", scan_radius, 3);
-static CONFIG_INT("astro.shortcut", shortcut, 0); /* OFF by default */
+static CONFIG_INT("astro.shortcut", shortcut, 3); /* DISP (600D) / LCD light (6D) */
 static CONFIG_INT("astro.overlay", focus_overlay, 0); /* opt-in manual focus overlay */
 static volatile int busy = 0;
 static volatile int overlay_busy = 0;
@@ -448,17 +449,40 @@ static MENU_UPDATE_FUNC(astro_dec_result)
 }
 static unsigned int astro_keypress(unsigned int key)
 {
-    if(shortcut && !busy && lv && !is_movie_mode() && display_idle()) {
+    if(shortcut>=1 && shortcut<=2 && !busy && !overlay_busy &&
+       lv && !is_movie_mode() && !gui_menu_shown() && display_idle()) {
         int activate=(shortcut==1 &&
              detect_double_click(key,MODULE_KEY_PRESS_HALFSHUTTER,
                                      MODULE_KEY_UNPRESS_HALFSHUTTER)) ||
                      (shortcut==2 && key==MODULE_KEY_INFO);
         if(activate) {
             start_action(1);
-            return shortcut==2 ? 0 : 1; /* consume INFO, keep shutter */
+            return shortcut==2 ? 0 : 1; /* INFO consumed, shutter preserved */
         }
     }
     return 1; /* allow normal Canon handling */
+}
+/* Model-specific buttons not exposed by Magic Lantern's portable key API.
+ * Only intercept them in PHOTO Live View, never in Canon menus or playback.
+ * Without electronic AF, toggle the manual focus readout instead of
+ * sending an unworkable lens-motor command. */
+static unsigned int astro_keypress_raw(unsigned int event_ptr)
+{
+    if(shortcut!=3 || !event_ptr)return 1;
+    struct event *event=(struct event *)(uintptr_t)event_ptr;
+    if(event->type!=0)return 1;
+    int cam=is_camera("600D","1.0.2")?ASTRO_CAMERA_600D:
+            (is_camera("6D","1.1.6")?ASTRO_CAMERA_6D:0);
+    int action=astro_shortcut_decide(
+        cam,event->param,1,lv && !is_movie_mode() && display_idle(),
+        gui_menu_shown(),busy || overlay_busy,ml_focus_ready(0));
+    if(action==ASTRO_SHORTCUT_AUTOFOCUS)start_action(1);
+    else if(action==ASTRO_SHORTCUT_TOGGLE_READOUT) {
+        focus_overlay=!focus_overlay;
+        overlay_score=-1; overlay_lost=0;
+        NotifyBox(2000,"Star readout %s",focus_overlay?"ON":"OFF");
+    }
+    return action?0:1;
 }
 static struct menu_entry astro_menu[] = {
     {
@@ -493,9 +517,9 @@ static struct menu_entry astro_menu[] = {
                   .help="0=auto if the lens reports focal length. Otherwise set manual 1-30 deg." },
                 { .name="Motor step size",.priv=&focus_step,.min=1,.max=3 },
                 { .name="Focus radius",.priv=&scan_radius,.min=1,.max=6 },
-                { .name="Focus shortcut",.priv=&shortcut,.min=0,.max=2,
-                  .choices=CHOICES("Off","Double half-press","INFO button"),
-                  .help="OFF by default; avoid conflicts with standard controls." },
+                { .name="Focus shortcut",.priv=&shortcut,.min=0,.max=3,
+                  .choices=CHOICES("Off","Double half-press","INFO button","DISP/LIGHT"),
+                  .help="Default ON: 600D DISP, 6D LCD light. Set Off to restore the original button. Photo LV only." },
                 { .name="Last result",.update=astro_status,.icon_type=IT_ACTION },
                 { .name="Solved RA",.update=astro_ra_result,.icon_type=IT_ACTION },
                 { .name="Solved Dec",.update=astro_dec_result,.icon_type=IT_ACTION },
@@ -529,5 +553,6 @@ MODULE_INFO_START()
 MODULE_INFO_END()
 MODULE_CBRS_START()
     MODULE_CBR(CBR_KEYPRESS,astro_keypress,0)
+    MODULE_CBR(CBR_KEYPRESS_RAW,astro_keypress_raw,0)
     MODULE_CBR(CBR_SECONDS_CLOCK,astro_seconds,0)
 MODULE_CBRS_END()

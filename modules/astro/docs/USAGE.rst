@@ -11,7 +11,7 @@ Do not use on irreplaceable hardware without hardware validation.
 Features:
 - Star sharpness measurement and guarded lens focus sweep in Live View.
 - Plate solving with a pointing hint using a compact star catalog.
-- Optional double half-shutter press or INFO shortcut for focus.
+- Optional button shortcuts for focus (default DISP/LIGHT).
 - PGM input for QEMU and repeatable tests.
 
 The module does not alter the original Trap Focus feature.\nTrash/Delete now opens Midnight first while the module is enabled.
@@ -32,7 +32,12 @@ Quick start
    600D at 200mm: 6.4 deg. 6D at 200mm: 10.3 deg.
 7. For deterministic QEMU tests place TEST.PGM (P5, 360x240) alongside
    STARS.BIN and choose Astronomy settings > Solve test PGM.
-8. Focus shortcut is off by default. Trap Focus remains unmodified.
+8. Focus shortcut defaults ON: DISP on 600D, LCD-light on 6D.
+Photo LiveView only. If electronic AF is available, the button runs
+autofocus (motor commands); with a manual lens it toggles the on-screen
+focus score. Choose Astronomy settings > Focus shortcut > Off to restore
+the button's normal behavior. Other choices: Double half-press or INFO.
+Trap Focus is not changed.
 
 Important: the YUV LiveView feed is NOT a long exposure. Most deep-sky
 fields have too few visible stars without capture or frame stacking.
@@ -104,3 +109,15 @@ STARS.IDX is a 10,392-byte direct-offset table. The camera reads only
 overlapping tile ranges using FIO_SeekSkipFile. This significantly
 reduces reads for hinted solving without a hash table or large RAM use.
 All index records must come from the same catalog version.
+
+Button shortcut compatibility
+-----------------------------
+
+600D: BGMT_PRESS_DISP (raw code 8). This otherwise switches display
+screens and is also used by some existing Magic Lantern LiveView shortcuts.
+6D: BGMT_LIGHT (raw code 0x20). This otherwise illuminates the top LCD.
+No shortcut event is intercepted in playback, movie mode or when a
+camera/menu interface is open. Disable the shortcut to restore original
+button behavior. Default mode was unit-tested with a simulated raw event,
+but physical key routing and autofocus motor safety have not been
+verified on a real camera.
