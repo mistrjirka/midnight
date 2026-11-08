@@ -21,7 +21,9 @@ class Catalog(C.Structure):
     _fields_ = [("x",C.c_int16),("y",C.c_int16),("mag10",C.c_uint16)]
 class Sol(C.Structure):
     _fields_ = [("center_x_cdeg",C.c_int32),("center_y_cdeg",C.c_int32),
-                ("matched",C.c_int),("rms_x10",C.c_int)]
+                ("matched",C.c_int),("rms_x10",C.c_int),
+                ("a_q12",C.c_int32),("b_q12",C.c_int32),
+                ("anchor_obs",C.c_int),("anchor_cat",C.c_int)]
 
 def load():
     SHARED.parent.mkdir(exist_ok=True)

@@ -161,3 +161,18 @@ All-sky blind matching and automatic long exposure are NOT implemented.
 Both QEMU runs used known sky hints and field width; those input
 requirements remain in the experimental menu. No proprietary ROMs or
 user photographs are included in the GitHub repository.
+
+## Gallery and LiveView solve controls
+
+- Q during Canon still-photo playback opens a Solve this photo prompt.
+  SET starts processing the current playback YUV buffer. No file writes.
+- Successful gallery results show RA and Dec in decimal degrees, with
+  matched-star boxes (up to 12) and known names (up to 8).
+- STARS.NAM contains 25,789 indexed labels, using the previously
+  unused 16-bit field in each 12-byte catalog record.
+- Gallery ignores the currently attached lens's focal length and
+  searches 12 plausible field widths unless the FOV was overridden.
+- LiveView solving waits 3 seconds, cancelling if LiveView closes.
+- The gallery photo overlay could NOT be tested inside QEMU: copied
+  external JPEGs were not recognized by Canon playback.
+- Rough sky RA/Dec is STILL required. Do not claim blind solving.

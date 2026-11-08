@@ -191,7 +191,8 @@ int astro_solve_hinted(const astro_star *obs,int nobs,
                        int w,int h,int fov_cdeg,astro_solution *res)
 {
     int best=0, best_rms=0;
-    int64_t best_cx=0,best_cy=0;
+    int64_t best_cx=0,best_cy=0,best_A=0,best_B=0;
+    int best_i=0,best_a=0;
     if (!obs||!cat||!res||nobs<4||ncat<4||ncat>ASTRO_MAX_CATALOG ||
         fov_cdeg<50||w<50||h<50) return 0;
     /* Candidate pairs: brightest 9 observed, brightest 40 catalog entries. */
@@ -237,6 +238,7 @@ int astro_solve_hinted(const astro_star *obs,int nobs,
                 best_cx=(int64_t)cat[a].x+(A*ux+B*uy)/denom;
                 best_cy=(int64_t)cat[a].y+(-B*ux+A*uy)/denom;
                 best=matches;best_rms=err;
+                best_A=A;best_B=B;best_i=i;best_a=a;
             }
         }
     }
@@ -247,5 +249,9 @@ int astro_solve_hinted(const astro_star *obs,int nobs,
     res->center_x_cdeg=(int32_t)best_cx;
     res->center_y_cdeg=(int32_t)best_cy;
     res->rms_x10=(best_rms*100/best); /* actually mean square pixels*100 */
+    res->a_q12=(int32_t)best_A;
+    res->b_q12=(int32_t)best_B;
+    res->anchor_obs=best_i;
+    res->anchor_cat=best_a;
     return best;
 }

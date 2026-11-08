@@ -19,6 +19,7 @@ TILE_COUNT = RA_BINS * DEC_BINS
 
 def make_catalog(source: pathlib.Path, dest: pathlib.Path, limiting_mag: float) -> int:
     stars = []
+    labels = [b""]  # ID 0 means no label.
     with source.open(newline="", encoding="utf-8") as file:
         for row in csv.DictReader(file):
             if not row["ra"] or not row["dec"] or not row["mag"]:
@@ -29,7 +30,19 @@ def make_catalog(source: pathlib.Path, dest: pathlib.Path, limiting_mag: float) 
             ra = round(float(row["ra"]) * 15 * 10000) % 3600000
             dec = round(float(row["dec"]) * 10000)
             mag10 = max(0, min(65535, round((mag + 5) * 10)))
-            stars.append((ra, dec, mag10, 0))
+            # Prefer the proper star name, then Bayer/Flamsteed, then
+            # Hipparcos number for bright unnamed stars. The same label ID
+            # is placed into the unused 16-bit record field.
+            label = row["proper"].strip() or " ".join(row["bf"].split())
+            if not label and mag <= 7.5 and row["hip"].strip():
+                label = "HIP " + row["hip"].strip()
+            encoded = label.encode("ascii","ignore")[:22]
+            label_id = 0
+            if encoded:
+                labels.append(encoded)
+                label_id = len(labels)-1
+                assert label_id < 65536
+            stars.append((ra, dec, mag10, label_id))
     # Each record belongs to one fixed 5x5 degree sky tile.
     # Fixed integer IDs avoid a hash table's RAM and collision overhead.
     def tile_id(record: tuple[int, int, int, int]) -> int:
@@ -55,6 +68,12 @@ def make_catalog(source: pathlib.Path, dest: pathlib.Path, limiting_mag: float) 
         file.write(struct.pack("<4sIIII", b"SIDX", 2, len(stars),
                                RA_BINS, DEC_BINS))
         file.write(struct.pack(f"<{TILE_COUNT+1}I", *bounds))
+    # Each label is 24 bytes: maximum 22 ASCII characters plus zero padding.
+    # O(1) lookup by the record's 16-bit label_id. No RAM dictionary.
+    with dest.with_suffix(".NAM").open("wb") as file:
+        file.write(struct.pack("<4sIII", b"SNAM", 1, len(labels), 24))
+        for label in labels:
+            file.write(label.ljust(24,bytes(1)))
     return len(stars)
 
 if __name__ == "__main__":

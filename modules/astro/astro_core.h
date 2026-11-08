@@ -11,6 +11,12 @@ typedef struct {
     int32_t center_x_cdeg, center_y_cdeg;
     int matched;
     int rms_x10;  /* Mean squared residual in pixels^2 * 100 */
+    /* Valid only after successful solve. Forward sky->image transform:
+     * px = observed[anchor_obs].x + (a*(sky.x-cat[anchor_cat].x)
+     *                              - b*(sky.y-cat[anchor_cat].y)) / 4096.
+     * Needed to show only VERIFIED matched stars, not guessed annotations. */
+    int32_t a_q12, b_q12;
+    int anchor_obs, anchor_cat;
 } astro_solution;
 
 /* 8-bit grayscale. Writes brightest stars first. No allocations. */

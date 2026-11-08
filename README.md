@@ -7,7 +7,7 @@ An astronomy-first interface for [Magic Lantern](https://github.com/reticulatedp
 ## Install
 
 1. Check your camera version under **Canon MENU → Firmware Ver.**
-2. Download the matching ZIP from the [Midnight release](https://github.com/mistrjirka/midnight/releases/tag/v0.2.3-alpha.1).
+2. Download the matching ZIP from the [Midnight release](https://github.com/mistrjirka/midnight/releases/tag/v0.2.4-alpha.1).
 3. **Already have Magic Lantern?** Extract the **entire ZIP** onto a spare, bootable Magic Lantern SD card. Replace the existing Magic Lantern files. Do not rerun the installer.
 4. **Fresh card?** Format it in the camera, extract the ZIP at the SD-card root, then use **MENU → Firmware Ver. → Firmware Update** in **M mode** to run **ML-SETUP.FIR**. Follow its instructions and restart. This installs the Magic Lantern boot setup, not a Canon firmware update.
 5. Press **Trash/Delete** to open Magic Lantern, enable **astro** in **Modules**, and restart.
@@ -27,7 +27,7 @@ An astronomy-first interface for [Magic Lantern](https://github.com/reticulatedp
 | **Manual star focus** | Toggles a live sharpness score. Works with manual lenses |
 | **Measure star now** | Measures focus once without moving the lens |
 | **Auto focus (no mask)** | Tries small electronic focus steps on a bright star |
-| **Solve sky (hinted)** | Finds pointing coordinates using a rough initial sky position |
+| **Solve LiveView (3s)** | Waits 3 seconds, then reads a Live View image for sky solving |
 | **Astronomy settings** | Advanced focus settings, pointing hint, lens FOV and test image |
 | **Full Magic Lantern** | Returns to the normal shooting menus |
 
@@ -51,25 +51,45 @@ To restore the original DISP/LCD-light behavior, open **Astronomy settings → F
 
 **Physical camera testing remains necessary.** Autofocus motor behavior has not been verified on a real lens; pressing the enabled shortcut can move an electronic AF lens.
 
-### Plate solving
+### Solve a saved photograph (main workflow)
 
-Use **1× Live View** with enough visible stars. Set approximate **Pointing RA hour**, **RA minute** and **Dec deg** under **Astronomy settings**. Read the approximate location in Stellarium. Leave **Frame width (0.1 deg) = 0** to use an electronic lens's focal length, or enter the field width for a manual lens. Select **Solve sky (hinted)** and read **Last result** in the settings submenu.
+1. Press **Play** and open a still photo at normal full-screen zoom.
+2. Press **Q**. Midnight asks **Solve this photo?**.
+3. Press **SET** to start. Press **Q** to cancel.
+4. On success, Midnight shows the result **over the displayed photograph**, including confirmed star names.
 
-<img src="docs/images/plate-solving-preview.png" alt="Illustrative pointing result, with rough RA and Dec hint" width="600">
+The result uses **degrees**, not hour/minute notation:
 
-**Blind solving is not ready yet.** A first all-sky index failed 3 of 5 synthetic test fields, so it is not enabled. The current solver uses Live View rather than long RAW exposures and may miss faint stars. The SD catalog now uses a small 2D sky index, so it reads only overlapping regions. [Blind-solving research](docs/BLIND_PLATE_SOLVING.md).
+| Result | Meaning |
+|---|---|
+| **RA: 80.12°** | Right ascension, similar to sky longitude |
+| **Dec: +33.87°** | Declination, similar to sky latitude |
+| **16 stars matched** | Number of independently verified catalog stars |
 
-**Result display:** The Astronomy settings menu shows **Solved RA** (hh:mm:ss), **Solved Dec** (degrees/minutes/seconds), and **Last result** on separate rows. In the 600D QEMU test, the bundled sample solved to RA **05:04:56**, Dec **+35°36′00″**, using 9 stars. This has not been validated on real sky images. No star-marker overlay yet.
+The overlay draws boxes around up to 12 confirmed stars and shows up to 8 proper names, Bayer/Flamsteed designations, or HIP catalog IDs. Press **Q** to hide it. The original photo is **not modified**. Midnight currently analyzes the camera's **displayed YUV preview**, not the original full-resolution RAW file.
 
-**Offline test:** Choose **Astronomy settings → Solve test PGM** with RA **05:00**, Dec **+35°**, and field width **64**. The included test image needs no sky or lens.
+**Current limitation:** A rough sky RA/Dec hint is still needed in **Astronomy settings**. The all-sky blind solver is not yet reliable enough to ship. The gallery can now search possible frame widths automatically, so manual lenses do **not** require a FOV entry. Lens metadata from a different, currently attached lens is ignored during gallery solving.
 
-The solver now masks long bright trails and ranks compact stars before matching. It does **not** alter the captured photograph, manual-focus readout, or autofocus algorithm.
+**Gallery UI status:** The module compiles, and names/coordinate mapping pass native tests. The photo-overlay workflow still needs physical camera verification. Canon's QEMU emulator did not recognize the JPG copied onto its virtual card, so the playback UI could not be tested end to end.
 
-The ZIP includes **STARS.BIN** and **STARS.IDX**. The camera loads only nearby 5° × 5° sky regions from SD instead of scanning the full catalog. The index itself uses 10 KB RAM. You do not need to configure it.
+### Solve from Live View
 
-### Camera VM photograph tests
+Open **1× Live View** and choose **Solve LiveView (3s)**. Midnight waits **3 seconds after you press the button** to reduce vibration, then reads a single Live View image. The three-second wait is **not an exposure**, and this mode does not trigger a shutter release.
 
-The Canon 600D QEMU emulator can solve a grayscale frame prepared from one real EOS 600D star-field preview: **16 matched stars, RA 05:20:28, Dec +33°52′12″**, close to an independent Astrometry.net result. The second photograph, which contains a prominent satellite/aircraft trail, now also solves in the Canon 600D QEMU after adding trail masking, star-profile ranking, and a sky-projection correction: **8 matched stars, RA 21:51:49, Dec +47°31′12″**, close to Astrometry.net's **21:51:51, +47°32′11″**. Neither photograph was uploaded to this repository. The test reads a processed PGM from the virtual SD card. Midnight does **not** yet read CR2 files or automatically take an exposure when Solve is selected.
+### Plate-solving tests
+
+Canon 600D QEMU successfully solved processed grayscale frames derived from two real Canon photographs using their approximate pointing hints:
+
+| Image | Matched stars | RA (degrees) | Dec (degrees) |
+|---|---:|---:|---:|
+| IMG_7975 | 16 | 80.12° | +33.87° |
+| IMG_6446, with a satellite/aircraft trail | 8 | 327.95° | +47.52° |
+
+Both are close to independent Astrometry.net solutions. Those test frames were manually prepared, not captured or decoded automatically by Midnight.
+
+The firmware ZIP contains **STARS.BIN** (catalog), **STARS.IDX** (fast sky-region lookup), and **STARS.NAM** (star names). No user photographs or proprietary ROM dumps are included.
+
+[Blind-solving research](docs/BLIND_PLATE_SOLVING.md).
 
 ## Troubleshooting
 

@@ -20,6 +20,9 @@ def package(camera: str, catalog: pathlib.Path) -> pathlib.Path:
         index=catalog.with_suffix(".IDX")
         assert index.is_file(), "Generate STARS.IDX with make_catalog.py"
         out.write(index,"ML/ASTRO/STARS.IDX",compress_type=zipfile.ZIP_DEFLATED)
+        labels=catalog.with_suffix(".NAM")
+        assert labels.is_file(), "Generate STARS.NAM with make_catalog.py"
+        out.write(labels,"ML/ASTRO/STARS.NAM",compress_type=zipfile.ZIP_DEFLATED)
         synthetic=ROOT/".astro-data"/"TEST.PGM"
         if synthetic.is_file():
             out.write(synthetic,"ML/ASTRO/TEST.PGM",
@@ -54,7 +57,7 @@ def package(camera: str, catalog: pathlib.Path) -> pathlib.Path:
     with zipfile.ZipFile(target) as z:
         assert z.testzip() is None
         for required in ("autoexec.bin","ML/modules/astro.mo",
-                         "ML/ASTRO/STARS.BIN","ML/ASTRO/STARS.IDX"):
+                         "ML/ASTRO/STARS.BIN","ML/ASTRO/STARS.IDX","ML/ASTRO/STARS.NAM"):
             assert required in z.namelist()
     return target
 

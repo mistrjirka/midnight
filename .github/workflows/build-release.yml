@@ -30,9 +30,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="v0.2.3-alpha.1"
+          tag="v0.2.4-alpha.1"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/magiclantern-astro-*.zip --clobber
           else
-            gh release create "$tag" dist/magiclantern-astro-*.zip --prerelease --title "Midnight trail-robust star extraction and sky-projection correction" --notes "EXPERIMENTAL. Integer star-profile filter, Hough satellite-trail rejection and improved sky projection. 600D QEMU matches 16 and 8 stars in two processed real-photo frames, including a satellite trail. This is still hinted solving of LiveView, not automatic exposure or blind solving. Physical camera and autofocus motor not tested. Use a spare SD card."
+            gh release create "$tag" dist/magiclantern-astro-*.zip --prerelease --title "Midnight gallery preview solving and decimal-degree coordinates" --notes "EXPERIMENTAL. Integer star-profile filter, Hough satellite-trail rejection and improved sky projection. 600D QEMU matches 16 and 8 stars in two processed real-photo frames, including a satellite trail. This is still hinted solving of LiveView, not automatic exposure or blind solving. Physical camera and autofocus motor not tested. Use a spare SD card."
           fi

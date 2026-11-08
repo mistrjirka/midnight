@@ -139,3 +139,29 @@ actual exposures (not from camera firmware RAW decoding):
 Both agree closely with independent Astrometry.net solutions. Neither
 QEMU test establishes actual camera LiveView low-light capability, nor
 supports user input-free blind solving.
+
+Gallery solve and star labels
+-----------------------------
+
+1. Open a saved still photograph at its normal zoom.
+2. Press Q and then SET in the Solve this photo dialog.
+3. Wait while Midnight processes the displayed YUV preview. A result
+   overlays RA and Dec (decimal degrees) and verified named-star boxes.
+4. Press Q to hide the result. Use LEFT/RIGHT to change the photo.
+
+The gallery does not read or modify the original RAW/JPEG file. The
+current firmware still uses approximate RA/Dec as a pointing hint,
+but it can search possible image widths automatically. For no known
+manual lens FOV, no FOV entry is needed in gallery playback.
+
+LiveView: the Solve LiveView (3s) action waits 3 seconds before sampling
+the sensor YUV preview to minimize camera shake. It does not trigger
+a 3-second shutter exposure.
+
+A matched star is labelled from a separate STARS.NAM file containing
+the HYG proper name, Bayer/Flamsteed designation, or HIP identifier
+for bright unnamed stars. Labels never come from unverified detections.
+
+The gallery overlay is UNVERIFIED on the physical 600D/6D: Canon QEMU
+did not recognize an externally inserted JPEG, so full playback
+integration could not be tested there.

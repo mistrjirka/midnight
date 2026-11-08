@@ -31,6 +31,18 @@
 #define CATALOG_MAGIC "ASTR"
 #define CATALOG_VERSION 1
 #define CATALOG_ENTRY_BYTES 12
+#define ANNOTATION_MAX 12
+struct annotation {int16_t x,y;char name[24];};
+static struct annotation matched_labels[ANNOTATION_MAX];
+static int n_matched_labels=0;
+static uint16_t nearby_names[ASTRO_MAX_CATALOG];
+static volatile int gallery_prompt=0;
+static volatile int gallery_results=0;
+static volatile int gallery_result_pending=0;
+static volatile int gallery_running=0;
+static int solved_matched_stars=0;
+static int result_from_gallery=0;
+static uint32_t gallery_image_sig=0;
 
 static CONFIG_INT("astro.hint_ra_h", hint_rah, 5);
 static CONFIG_INT("astro.hint_ra_m", hint_ram, 0);
@@ -59,7 +71,7 @@ static int capture_liveview(void)
 {
     struct vram_info *v;
     int x,y;
-    if (!lv || !image) return 0;
+    if (!image || (!lv && !is_pure_play_photo_mode())) return 0;
     v=get_yuv422_vram();
     if(!v || !v->vram || v->width<IM_W || v->height<IM_H ||
         v->pitch<v->width*2 || v->width>4096 || v->height>2160)
@@ -74,6 +86,28 @@ static int capture_liveview(void)
     }
     return 1;
 }
+/* Sample the Canon playback YUV image without storing or modifying the
+ * photo. We use this to suppress annotations if the user changes photos
+ * while the solver runs. Bitmap annotations are a separate overlay. */
+static uint32_t gallery_photo_signature(void)
+{
+    if(!is_pure_play_photo_mode())return 0;
+    struct vram_info *v=get_yuv422_vram();
+    if(!v || !v->vram || v->pitch<v->width*2 ||
+       v->width<IM_W || v->height<IM_H ||
+       v->width>4096 || v->height>2160)return 0;
+    uint32_t sig=2166136261U;
+    for(int y=14;y<240;y+=13) {
+        const uint8_t *row=v->vram+(y*v->height/240)*v->pitch;
+        for(int x=13;x<360;x+=19) {
+            int sx=x*v->width/360;
+            sig^=row[sx*2+1];
+            sig*=16777619U;
+        }
+    }
+    return sig;
+}
+
 /* File reads may complete partially on Canon's SD interface. Ensure
  * that each requested block is consumed, or stop on a real I/O error. */
 static int read_exact(FILE *f, void *dest, int count)
@@ -240,9 +274,12 @@ static int read_catalog(int fov_cdeg)
                     if(n==ASTRO_MAX_CATALOG && mag>=nearby[n-1].mag10)
                         continue;
                     if(n<ASTRO_MAX_CATALOG)n++;
-                    for(k=n-1;k>0 && nearby[k-1].mag10>mag;k--)
+                    for(k=n-1;k>0 && nearby[k-1].mag10>mag;k--) {
                         nearby[k]=nearby[k-1];
+                        nearby_names[k]=nearby_names[k-1];
+                    }
                     nearby[k].x=x;nearby[k].y=y;nearby[k].mag10=mag;
+                    nearby_names[k]=recs[j].pad;
                 }
                 pos+=take;
             }
@@ -250,6 +287,107 @@ static int read_catalog(int fov_cdeg)
     }
     FIO_CloseFile(f);
     return n;
+}
+
+/* Read matching names from a small indexed ASCII sidecar file.
+ * Max 12 names and a few seeking calls per solve; no heap allocations. */
+static void prepare_annotations(const astro_solution *sol,int nobs,int ncat)
+{
+    n_matched_labels=0;
+    if(!sol || !image || sol->anchor_obs>=nobs || sol->anchor_cat>=ncat)
+        return;
+    FILE *f=FIO_OpenFile("ML/ASTRO/STARS.NAM",O_RDONLY | O_SYNC);
+    if(!f)return;
+    char head[16],label[24];
+    uint32_t version=0,count=0,record_size=0;
+    if(!read_exact(f,head,16) || memcmp(head,"SNAM",4))goto end;
+    memcpy(&version,head+4,4);
+    memcpy(&count,head+8,4);
+    memcpy(&record_size,head+12,4);
+    if(version!=1 || count>65536 || record_size!=24)goto end;
+    uint64_t used=0;
+    for(int o=0;o<nobs && n_matched_labels<ANNOTATION_MAX;o++) {
+        int best=-1,mind=17;
+        for(int k=0;k<ncat;k++) {
+            if(used & (1ULL<<k))continue;
+            int dx=nearby[k].x-nearby[sol->anchor_cat].x;
+            int dy=nearby[k].y-nearby[sol->anchor_cat].y;
+            int px=observed[sol->anchor_obs].x+
+                (int)(((int64_t)sol->a_q12*dx-(int64_t)sol->b_q12*dy)>>12);
+            int py=observed[sol->anchor_obs].y+
+                (int)(((int64_t)sol->b_q12*dx+(int64_t)sol->a_q12*dy)>>12);
+            int ex=px-observed[o].x,ey=py-observed[o].y;
+            int d=ex*ex+ey*ey;
+            if(d<mind){mind=d;best=k;}
+        }
+        if(best<0)continue;
+        used|=1ULL<<best;
+        if(!nearby_names[best] || nearby_names[best]>=count)continue;
+        int64_t offset=16+(int64_t)nearby_names[best]*24;
+        if(FIO_SeekSkipFile(f,offset,SEEK_SET)!=offset)break;
+        if(!read_exact(f,label,24))break;
+        label[23]=0;
+        if(!label[0])continue;
+        struct annotation *a=&matched_labels[n_matched_labels++];
+        a->x=observed[o].x; a->y=observed[o].y;
+        memcpy(a->name,label,24);
+    }
+end:
+    FIO_CloseFile(f);
+}
+
+static void draw_gallery_results(void)
+{
+    if(!gallery_results || !is_pure_play_photo_mode())return;
+    /* Canon playback bitmap canvas is 720x480; underlying JPEG is not
+     * modified. Only the verified matches get a caption. */
+    BMP_LOCK(
+        bmp_fill(COLOR_BLACK,8,6,345,102);
+        bmp_printf(FONT(FONT_MED,COLOR_YELLOW,COLOR_BLACK),16,12,
+                   "SKY FOUND (%d stars)",solved_matched_stars);
+        bmp_printf(FONT(FONT_MED,COLOR_WHITE,COLOR_BLACK),16,43,
+                   "RA: %s",solve_ra_text);
+        bmp_printf(FONT(FONT_MED,COLOR_WHITE,COLOR_BLACK),16,72,
+                   "Dec: %s",solve_dec_text);
+        for(int i=0;i<n_matched_labels;i++) {
+            int x=matched_labels[i].x*2; int y=matched_labels[i].y*2;
+            if(x<14||x>690||y<16||y>454)continue;
+            bmp_draw_rect(COLOR_YELLOW,x-5,y-5,10,10);
+            if(i<8) {
+                int tx=x+9;int ty=y+5;
+                if(tx>565)tx=x-126;
+                if(ty>452)ty=y-14;
+                bmp_printf(FONT(FONT_SMALL,COLOR_YELLOW,COLOR_BLACK),
+                           tx,ty,"%s",matched_labels[i].name);
+            }
+        }
+        bmp_printf(FONT(FONT_SMALL,COLOR_WHITE,COLOR_BLACK),12,450,
+                   "Q: hide  |  LEFT/RIGHT: other photo");
+    );
+}
+
+static void draw_gallery_progress(void)
+{
+    if(!gallery_running || !is_pure_play_photo_mode())return;
+    BMP_LOCK(
+       bmp_fill(COLOR_BLACK,12,407,695,43);
+       bmp_printf(FONT(FONT_MED,COLOR_YELLOW,COLOR_BLACK),
+                  20,414,"Finding sky: %s",last_status);
+    );
+}
+
+static void draw_gallery_prompt(void)
+{
+    if(!gallery_prompt || !is_pure_play_photo_mode())return;
+    BMP_LOCK(
+       bmp_fill(COLOR_BLACK,40,174,640,122);
+       bmp_printf(FONT(FONT_LARGE,COLOR_YELLOW,COLOR_BLACK),
+                  56,183,"Solve this photo?");
+       bmp_printf(FONT(FONT_MED,COLOR_WHITE,COLOR_BLACK),
+                  56,226,"SET: solve    Q: cancel");
+       bmp_printf(FONT(FONT_SMALL,COLOR_WHITE,COLOR_BLACK),
+                  56,260,"Current solver still requires a sky hint");
+    );
 }
 
 /* Lens IO is injected into the portable guarded focus controller.
@@ -275,7 +413,7 @@ static int ml_focus_step(void *unused,int dir,int speed)
 static int ml_focus_frame(void *unused,uint8_t *dst,int width,int height)
 {
     if(!dst || dst!=image || width!=IM_W || height!=IM_H)return 0;
-    return capture_liveview();
+    return lv && capture_liveview();
 }
 static void ml_focus_sleep(void *unused,int delay)
 {
@@ -306,17 +444,25 @@ static int astro_effective_fov(void)
     int sensor_x10=is_camera("6D","1.1.6")?358:223;
     return astro_fov_cdeg(sensor_x10,lens_info.focal_len);
 }
-static void do_solve(int test_mode)
+static void do_solve(int action)
 {
-    int n, nc, fov=test_mode && fov10==0 ? 640 : astro_effective_fov();
+    int test_mode=(action==3), gallery_mode=(action==5);
+    /* The selected gallery photo need not use today's attached lens.
+     * Ignore lens metadata in playback. Search scales unless the user
+     * explicitly set a FOV override. The sky hint is still required. */
+    int n, nc, fov=test_mode && fov10==0 ? 640 :
+        (gallery_mode ? (fov10>0 ? fov10*10 : 0) : astro_effective_fov());
     astro_solution result={0};
-    if (fov<100 || fov>3000) {strcpy(last_status,"Set frame FOV 1-30 deg");return;}
-    if(!test_mode && lv_dispsize != 1) {
+    if(fov>3000){strcpy(last_status,"FOV outside 1-30 degrees");return;}
+    if(fov<100)fov=0; /* No lens metadata: search several sky scales. */
+    if(!test_mode && !gallery_mode && lv_dispsize != 1) {
         strcpy(last_status,"Use 1x LV for full frame solving");
         return;
     }
+    if(gallery_mode)gallery_image_sig=gallery_photo_signature();
     if (!(test_mode?capture_test_pgm():capture_liveview())) {
-        if(!test_mode) strcpy(last_status,"No LiveView frame");
+        if(!test_mode) strcpy(last_status,gallery_mode?
+              "No playback image":"No LiveView frame");
         return;
     }
     /* Suppress long bright satellite/aircraft tracks in our own
@@ -325,11 +471,28 @@ static void do_solve(int test_mode)
     n=astro_find_stars_psf(image,IM_W,IM_H,IM_W,observed,ASTRO_MAX_STARS);
     if(n<8) {snprintf(last_status,sizeof(last_status),"Only %d stars, need >=8",n);return;}
     strcpy(last_status,"Matching stars...");
-    nc=read_catalog(fov);
-    if(nc==-2) {strcpy(last_status,"Missing/invalid STARS.IDX");return;}
-    if(nc<0) {strcpy(last_status,"Missing/invalid STARS.BIN");return;}
-    if(nc<8) {strcpy(last_status,"Not enough catalog stars");return;}
-    if(!astro_solve_hinted(observed,n,nearby,nc,IM_W,IM_H,fov,&result)) {
+    int matched=0;
+    /* When no electronic lens or manually configured FOV exists, search
+     * 1.5 to 30 degree field widths automatically. This still needs the
+     * approximate sky position: NOT an all-sky blind solver. */
+    static const int candidate_fov[]={
+        680,520,900,400,1170,300,1520,220,1970,160,2560,3000
+    };
+    int total=fov?1:COUNT(candidate_fov);
+    for(int attempt=0;attempt<total;attempt++) {
+        int trial=fov?fov:candidate_fov[attempt];
+        nc=read_catalog(trial);
+        if(nc==-2){strcpy(last_status,"Missing/invalid STARS.IDX");return;}
+        if(nc<0){strcpy(last_status,"Missing/invalid STARS.BIN");return;}
+        if(nc<8)continue;
+        if(astro_solve_hinted(observed,n,nearby,nc,IM_W,IM_H,
+                              trial,&result)>=8) {
+            matched=1;
+            fov=trial;
+            break;
+        }
+    }
+    if(!matched) {
         snprintf(last_status,sizeof(last_status),
                  streak_masked?"%d stars; streak masked; no match":
                                "%d stars; no match",n);
@@ -353,16 +516,22 @@ static void do_solve(int test_mode)
     while(ra>=3600000)ra-=3600000;
     /* RA as hours/minutes/seconds, Dec as degrees/minutes/seconds.
      * Separate menu rows prevent clipped coordinates on 720px LCD. */
-    uint32_t ra_seconds=(uint32_t)(((int64_t)ra*86400+1800000)/3600000)%86400;
-    int32_t dec_abs=dec<0?-dec:dec;
-    uint32_t dec_seconds=(uint32_t)(((int64_t)dec_abs*3600+5000)/10000);
-    snprintf(solve_ra_text,sizeof(solve_ra_text),"%02d:%02d:%02d",
-             (int)(ra_seconds/3600),(int)((ra_seconds%3600)/60),
-             (int)(ra_seconds%60));
-    snprintf(solve_dec_text,sizeof(solve_dec_text),"%s%02dd%02dm%02ds",
-             dec<0?"-":"+",(int)(dec_seconds/3600),
-             (int)((dec_seconds%3600)/60),(int)(dec_seconds%60));
+    /* Sky longitude (RA) and latitude (Dec) in decimal DEGREES.
+     * 10000 native units = 1 degree; round to 2 decimals. */
+    int ra_centi=(ra+50)/100;
+    if(ra_centi>=36000)ra_centi=0;
+    int dec_centi=((dec<0?-dec:dec)+50)/100;
+    snprintf(solve_ra_text,sizeof(solve_ra_text),"%d.%02d deg",
+             ra_centi/100,ra_centi%100);
+    snprintf(solve_dec_text,sizeof(solve_dec_text),"%s%d.%02d deg",
+             dec<0?"-":"+",dec_centi/100,dec_centi%100);
+    solved_matched_stars=result.matched;
     snprintf(last_status,sizeof(last_status),"Solved: %d stars",result.matched);
+    if(gallery_mode) {
+        result_from_gallery=1;
+        prepare_annotations(&result,n,nc);
+        gallery_result_pending=1;
+    }
 }
 static void do_measure(void)
 {
@@ -400,6 +569,16 @@ static void astro_overlay_worker(void *unused)
 }
 static unsigned int astro_seconds(unsigned int unused)
 {
+    /* Gallery drawings stay visible over the selected photograph, while
+     * Canon may redraw the bitmap when overlays or UI states change. */
+    if(gallery_prompt || gallery_results || gallery_running) {
+        if(!is_pure_play_photo_mode()) {
+            gallery_prompt=gallery_results=gallery_result_pending=0;
+            gallery_running=0;
+        } else if(gallery_prompt) draw_gallery_prompt();
+        else if(gallery_results) draw_gallery_results();
+        else draw_gallery_progress();
+    }
     if(!focus_overlay || !lv || is_movie_mode() || gui_menu_shown())return 0;
     if(overlay_score>=0)
         bmp_printf(FONT(FONT_MED,COLOR_WHITE,COLOR_BLACK),22,56,
@@ -427,8 +606,39 @@ static void astro_worker(void *ignored)
         strcpy(last_status,"Out of RAM (86 KB needed)");
     } else if(action==1)do_focus();
     else if(action==4)do_measure();
-    else if(action==2 || action==3)do_solve(action==3);
-    NotifyBox(5000,"Astro: %s",last_status);
+    else if(action==2 || action==3 || action==5) {
+        if(action==2) {
+            /* 3-second vibration settling before reading LIVEVIEW pixels.
+             * Do not delay gallery images; their exposure was already taken. */
+            strcpy(last_status,"Stabilizing: 3 seconds");
+            for(int elapsed=0;elapsed<3000;elapsed+=100) {
+                if(!lv || is_movie_mode() || is_play_or_qr_mode()) {
+                    strcpy(last_status,"LiveView changed; solve cancelled");
+                    goto completed;
+                }
+                msleep(100);
+            }
+        }
+        if(action==5 && !is_pure_play_photo_mode()) {
+            strcpy(last_status,"Photo playback closed");
+            goto completed;
+        }
+        do_solve(action);
+    }
+completed:
+    gallery_running=0;
+    if(action==5 && gallery_result_pending && is_pure_play_photo_mode() &&
+       gallery_image_sig && gallery_image_sig==gallery_photo_signature()) {
+        gallery_result_pending=0;
+        gallery_results=1;
+        draw_gallery_results();
+    } else {
+        if(action==5 && gallery_result_pending) {
+            gallery_result_pending=0;
+            strcpy(last_status,"Photo changed; result hidden");
+        }
+        NotifyBox(4500,"Astro: %s",last_status);
+    }
     busy=0;
 }
 static void start_action(int action)
@@ -440,9 +650,13 @@ static void start_action(int action)
     }
     busy=1;
     requested_action=action;
-    if(action==2 || action==3) {
+    if(action==2 || action==3 || action==5) {
         solve_ra_text[0]=0;
         solve_dec_text[0]=0;
+        result_from_gallery=0;
+        gallery_results=0;
+        gallery_result_pending=0;
+        n_matched_labels=0;
     }
     strcpy(last_status,"Running...");
     if(!task_create("astro_task",0x1d,0x4000,astro_worker,0)) {
@@ -480,15 +694,54 @@ static MENU_UPDATE_FUNC(astro_status)
 static MENU_UPDATE_FUNC(astro_ra_result)
 {
     MENU_SET_VALUE("%s",solve_ra_text[0]?solve_ra_text:"--");
-    MENU_SET_HELP("Solved right ascension, hours:minutes:seconds.");
+    MENU_SET_HELP("Right ascension (sky longitude), in decimal degrees.");
 }
 static MENU_UPDATE_FUNC(astro_dec_result)
 {
     MENU_SET_VALUE("%s",solve_dec_text[0]?solve_dec_text:"--");
-    MENU_SET_HELP("Solved declination, signed degrees/minutes/seconds.");
+    MENU_SET_HELP("Declination (sky latitude), in decimal degrees.");
 }
 static unsigned int astro_keypress(unsigned int key)
 {
+    /* Photo gallery: Q opens a confirmation, SET runs the solver on
+     * the full-screen playback YUV preview. No file rewriting, no motor.
+     * Esc/navigation restores Canon key behavior. */
+    if(is_pure_play_photo_mode() && !gui_menu_shown()) {
+        if(gallery_prompt) {
+            if(key==MODULE_KEY_PRESS_SET && !busy) {
+                gallery_prompt=0;
+                clrscr();
+                start_action(5);
+                return 0;
+            }
+            if(key==MODULE_KEY_Q) {
+                gallery_prompt=0;
+                clrscr();
+                return 0;
+            }
+            gallery_prompt=0;
+            clrscr();
+        }
+        if(key==MODULE_KEY_Q) {
+            if(gallery_results) {
+                gallery_results=0;
+                clrscr();
+                return 0;
+            }
+            if(!busy) {
+                gallery_prompt=1;
+                draw_gallery_prompt();
+                return 0;
+            }
+        }
+        if(gallery_results && key!=MODULE_KEY_INFO) {
+            gallery_results=0;
+            clrscr();
+        }
+    } else {
+        gallery_prompt=0;
+        gallery_results=0;
+    }
     if(shortcut>=1 && shortcut<=2 && !busy && !overlay_busy &&
        lv && !is_movie_mode() && !gui_menu_shown() && display_idle()) {
         int activate=(shortcut==1 &&
@@ -543,8 +796,8 @@ static struct menu_entry astro_menu[] = {
             { .name="Auto focus (no mask)", .select=start_focus,
               .help="Electronic lens only; uses star sharpness, NOT Bahtinov spikes.",
               .icon_type=IT_ACTION },
-            { .name="Solve sky (hinted)", .select=start_solve,
-              .help="Current solver still requires a rough RA/Dec hint. Blind solving under development.",
+            { .name="Solve LiveView (3s)", .select=start_solve,
+              .help="Wait 3 seconds to reduce vibrations, then solve 1x LiveView. Hint still required.",
               .icon_type=IT_ACTION },
             { .name="Astronomy settings", .select=menu_open_submenu, .children=(struct menu_entry[]) {
                 { .name="Solve test PGM", .select=start_test,
@@ -561,8 +814,8 @@ static struct menu_entry astro_menu[] = {
                   .choices=CHOICES("Off","Double half-press","INFO button","DISP/LIGHT"),
                   .help="Default ON: 600D DISP, 6D LCD light. Set Off to restore the original button. Photo LV only." },
                 { .name="Last result",.update=astro_status,.icon_type=IT_ACTION },
-                { .name="Solved RA",.update=astro_ra_result,.icon_type=IT_ACTION },
-                { .name="Solved Dec",.update=astro_dec_result,.icon_type=IT_ACTION },
+                { .name="RA (deg)",.update=astro_ra_result,.icon_type=IT_ACTION },
+                { .name="Dec (deg)",.update=astro_dec_result,.icon_type=IT_ACTION },
                 MENU_EOL
             } },
             { .name="Full Magic Lantern", .select=open_normal_menus,
