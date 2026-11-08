@@ -50,6 +50,10 @@ def catalog_for_hint(stars, rah, ram, dec, fov=640):
         x=round(dra*cosq*100)
         y=round((de/1e4-dec)*100)
         if abs(x)<lim_x and abs(y)<lim_y:
+            t=math.tan(math.radians(dec))
+            x0,y0=x,y
+            x=round(x0-x0*y0*t/5729.58)
+            y=round(y0+x0*x0*t/(2*5729.58))
             item=(x,y,m10)
             all_projected.append(item)
     projected=sorted(all_projected,key=lambda x:x[2])[:64]

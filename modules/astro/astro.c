@@ -23,6 +23,8 @@
 #include "astro_core.h"
 #include "astro_focus_control.h"
 #include "astro_shortcut.h"
+#include "astro_streak.h"
+#include "astro_psf.h"
 
 #define IM_W 360
 #define IM_H 240
@@ -116,6 +118,26 @@ static int cos_dec_q14(int deg)
     if(a>=90)return 0;
     return lut[a/5]+((int)lut[a/5+1]-(int)lut[a/5])*(a%5)/5;
 }
+/* A plane with x=RA*cos(dec_hint), y=Dec is not flat enough across a
+ * several-degree star field, especially near the celestial poles.
+ * Apply a second-order tangent-plane approximation in centidegrees.
+ * tan(dec) is Q14, and 5729.58=100*(180/pi). Avoid floating point. */
+static int32_t tan_dec_q14(int dec)
+{
+    int cosq=cos_dec_q14(dec);
+    if(cosq<1)return 0;
+    int sinq=cos_dec_q14(90-(dec<0?-dec:dec));
+    if(dec<0)sinq=-sinq;
+    return (int32_t)(((int64_t)sinq*16384)/cosq);
+}
+static void tangent_project(int x,int y,int tanq,int *px,int *py)
+{
+    int64_t div=(int64_t)572958*16384;
+    int64_t dx=((int64_t)x*y*tanq*100)/div;
+    int64_t dy=((int64_t)x*x*tanq*100)/(2*div);
+    *px=x-(int)dx;
+    *py=y+(int)dy;
+}
 #define ASTRO_RA_BINS 72
 #define ASTRO_DEC_BINS 36
 #define ASTRO_TILE_COUNT (ASTRO_RA_BINS * ASTRO_DEC_BINS)
@@ -134,6 +156,7 @@ static int read_catalog(int fov_cdeg)
     int limit_x=fov_cdeg/2+360, limit_y=fov_cdeg/3+360;
     int32_t ra_hint=(hint_rah*15*10000 + hint_ram*2500);
     int32_t dec_hint=hint_dec*10000;
+    int tanq=tan_dec_q14(hint_dec);
 
     FILE *idx=FIO_OpenFile("ML/ASTRO/STARS.IDX",O_RDONLY | O_SYNC);
     if(!idx)return -2;
@@ -209,6 +232,10 @@ static int read_catalog(int fov_cdeg)
                     int y=(int)(ddec/100);
                     if(x< -limit_x || x>limit_x || y< -limit_y || y>limit_y)
                         continue;
+                    /* Fix curved RA/Dec grid before matching image geometry.
+                     * Filter the original coordinates so all tile overlap
+                     * and catalog-selection tests remain conservative. */
+                    tangent_project(x,y,tanq,&x,&y);
                     int mag=recs[j].mag10,k;
                     if(n==ASTRO_MAX_CATALOG && mag>=nearby[n-1].mag10)
                         continue;
@@ -292,7 +319,10 @@ static void do_solve(int test_mode)
         if(!test_mode) strcpy(last_status,"No LiveView frame");
         return;
     }
-    n=astro_find_stars(image,IM_W,IM_H,IM_W,observed,ASTRO_MAX_STARS);
+    /* Suppress long bright satellite/aircraft tracks in our own
+     * scratch image. This never alters Canon's captured frame. */
+    int streak_masked=astro_mask_streak(image,IM_W,IM_H,IM_W);
+    n=astro_find_stars_psf(image,IM_W,IM_H,IM_W,observed,ASTRO_MAX_STARS);
     if(n<8) {snprintf(last_status,sizeof(last_status),"Only %d stars, need >=8",n);return;}
     strcpy(last_status,"Matching stars...");
     nc=read_catalog(fov);
@@ -300,15 +330,25 @@ static void do_solve(int test_mode)
     if(nc<0) {strcpy(last_status,"Missing/invalid STARS.BIN");return;}
     if(nc<8) {strcpy(last_status,"Not enough catalog stars");return;}
     if(!astro_solve_hinted(observed,n,nearby,nc,IM_W,IM_H,fov,&result)) {
-        snprintf(last_status,sizeof(last_status),"%d stars, no match. Check hint",n);
+        snprintf(last_status,sizeof(last_status),
+                 streak_masked?"%d stars; streak masked; no match":
+                               "%d stars; no match",n);
         return;
     }
-    /* The result is in centidegrees relative to the hint position. */
+    /* Center is in tangent-plane centidegrees; undo the quadratic
+     * approximation before converting back to celestial coordinates. */
     int32_t ra=(hint_rah*15*10000+hint_ram*2500);
     int cosq=cos_dec_q14(hint_dec);
     if(cosq<128) {strcpy(last_status,"Too close to celestial pole");return;}
-    ra+=(int32_t)((int64_t)result.center_x_cdeg*100*16384/cosq);
-    int32_t dec=(int32_t)hint_dec*10000+result.center_y_cdeg*100;
+    int tanq=tan_dec_q14(hint_dec);
+    /* Inverse to 2nd order: deltaDec = y - tan(dec)*x*x/(2*5729.58),
+     * deltaRA*cos(dec) = x + tan(dec)*x*y/5729.58. */
+    int64_t div=(int64_t)572958*16384;
+    int y=result.center_y_cdeg,x=result.center_x_cdeg;
+    int64_t ra_plane=x + ((int64_t)x*y*tanq*100)/div;
+    int64_t dec_plane=y - ((int64_t)x*x*tanq*100)/(2*div);
+    ra+=(int32_t)(ra_plane*100*16384/cosq);
+    int32_t dec=(int32_t)hint_dec*10000+(int32_t)(dec_plane*100);
     while(ra<0)ra+=3600000;
     while(ra>=3600000)ra-=3600000;
     /* RA as hours/minutes/seconds, Dec as degrees/minutes/seconds.

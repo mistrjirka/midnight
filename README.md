@@ -7,7 +7,7 @@ An astronomy-first interface for [Magic Lantern](https://github.com/reticulatedp
 ## Install
 
 1. Check your camera version under **Canon MENU → Firmware Ver.**
-2. Download the matching ZIP from the [Midnight release](https://github.com/mistrjirka/midnight/releases/tag/v0.2.2-alpha.1).
+2. Download the matching ZIP from the [Midnight release](https://github.com/mistrjirka/midnight/releases/tag/v0.2.3-alpha.1).
 3. **Already have Magic Lantern?** Extract the **entire ZIP** onto a spare, bootable Magic Lantern SD card. Replace the existing Magic Lantern files. Do not rerun the installer.
 4. **Fresh card?** Format it in the camera, extract the ZIP at the SD-card root, then use **MENU → Firmware Ver. → Firmware Update** in **M mode** to run **ML-SETUP.FIR**. Follow its instructions and restart. This installs the Magic Lantern boot setup, not a Canon firmware update.
 5. Press **Trash/Delete** to open Magic Lantern, enable **astro** in **Modules**, and restart.
@@ -63,7 +63,13 @@ Use **1× Live View** with enough visible stars. Set approximate **Pointing RA h
 
 **Offline test:** Choose **Astronomy settings → Solve test PGM** with RA **05:00**, Dec **+35°**, and field width **64**. The included test image needs no sky or lens.
 
+The solver now masks long bright trails and ranks compact stars before matching. It does **not** alter the captured photograph, manual-focus readout, or autofocus algorithm.
+
 The ZIP includes **STARS.BIN** and **STARS.IDX**. The camera loads only nearby 5° × 5° sky regions from SD instead of scanning the full catalog. The index itself uses 10 KB RAM. You do not need to configure it.
+
+### Camera VM photograph tests
+
+The Canon 600D QEMU emulator can solve a grayscale frame prepared from one real EOS 600D star-field preview: **16 matched stars, RA 05:20:28, Dec +33°52′12″**, close to an independent Astrometry.net result. The second photograph, which contains a prominent satellite/aircraft trail, now also solves in the Canon 600D QEMU after adding trail masking, star-profile ranking, and a sky-projection correction: **8 matched stars, RA 21:51:49, Dec +47°31′12″**, close to Astrometry.net's **21:51:51, +47°32′11″**. Neither photograph was uploaded to this repository. The test reads a processed PGM from the virtual SD card. Midnight does **not** yet read CR2 files or automatically take an exposure when Solve is selected.
 
 ## Troubleshooting
 
@@ -72,7 +78,3 @@ If the camera does not start, turn it off, remove the SD card and try booting wi
 [Development details](ASTRO_DEVELOPMENT.md) · [Build from source](scripts/build.sh)
 
 Midnight and Magic Lantern: GPL-2.0-or-later. HYG star catalog: David Nash / Astronexus, CC BY-SA 4.0.
-
-### Camera VM photograph tests
-
-The Canon 600D QEMU emulator can solve a grayscale frame prepared from one real EOS 600D star-field preview: **16 matched stars, RA 05:20:28, Dec +33°52′12″**, close to an independent Astrometry.net result. Another photograph containing a prominent satellite/aircraft trail did **not** solve with Midnight's present on-camera star detector, although offline Astrometry.net can solve it. Neither photograph was uploaded to this repository. The test reads a processed PGM from the virtual SD card. Midnight does **not** yet read CR2 files or automatically take an exposure when Solve is selected.

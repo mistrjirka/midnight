@@ -140,3 +140,24 @@ did solve independently in Astrometry.net. This reveals a real
 robustness limitation of Midnight's star detection on trail-heavy photos.
 
 No photographic user data or ROM dumps are distributed in this repo.
+
+## Camera VM trail and sky-projection regression (2026-11-08)
+
+The native portable C and Canon 600D QEMU both solve 360x240 grayscale
+frames derived from the user's EOS 600D star photographs:
+
+| Source | QEMU matched | RA | Dec | Astrometry.net comparison |
+| --- | ---: | --- | --- | --- |
+| IMG_7975 | 16 | 05:20:28 | +33d52m12s | 05:20:26 +33d51m56s |
+| IMG_6446 (bright trail) | 8 | 21:51:49 | +47d31m12s | 21:51:51 +47d32m11s |
+
+The 6446 result requires 3 parts: a bounded Hough trail mask, high-
+precision two-scale Gaussian candidate ranking, and a second-order
+integer correction of the sky-plane approximation. Trail removal alone
+was insufficient. Original LiveView frame and focus metric are untouched.
+
+PSF scratch: ~44 KB horizontal row-ring, ~169 KB response buffer.
+All-sky blind matching and automatic long exposure are NOT implemented.
+Both QEMU runs used known sky hints and field width; those input
+requirements remain in the experimental menu. No proprietary ROMs or
+user photographs are included in the GitHub repository.

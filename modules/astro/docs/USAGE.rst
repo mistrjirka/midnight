@@ -121,3 +121,21 @@ camera/menu interface is open. Disable the shortcut to restore original
 button behavior. Default mode was unit-tested with a simulated raw event,
 but physical key routing and autofocus motor safety have not been
 verified on a real camera.
+
+Trail and star-noise robustness
+------------------------------
+
+The plate solver (not the focus readout) performs a bounded integer Hough
+line check to mask a long bright streak. A separable two-scale Gaussian
+star ranking then favors compact sources over isolated sensor noise. The
+raw or live camera image is never changed. The catalog projection adds a
+second-order correction to improve matching at higher declinations.
+
+Canon 600D QEMU test results with grayscale frames downsampled from
+actual exposures (not from camera firmware RAW decoding):
+- IMG_7975: 16 stars, RA 05:20:28 Dec +33d52m12s.
+- IMG_6446 (long diagonal streak): 8 stars, RA 21:51:49
+  Dec +47d31m12s, with a test-only matching pointing hint.
+Both agree closely with independent Astrometry.net solutions. Neither
+QEMU test establishes actual camera LiveView low-light capability, nor
+supports user input-free blind solving.

@@ -23,6 +23,8 @@ curl --fail --location --retry 3 --silent --show-error --output "$ML_ROOT/.astro
   python3 modules/astro/tests/test_faults.py
   python3 modules/astro/tests/test_shortcut.py
   python3 modules/astro/tests/test_solver.py .astro-data/STARS.BIN
+  python3 modules/astro/tests/test_streak.py .astro-data/TEST.PGM
+  python3 modules/astro/tests/test_psf.py
   python3 modules/astro/tests/test_catalog_index.py .astro-data/STARS.BIN
   make -C modules -j4
   make -C platform/600D.102 -j4
