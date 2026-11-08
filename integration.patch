@@ -30,3 +30,20 @@ index a3a888f..919ab25 100644
  selftest
  silent
 +astro
+diff --git a/src/menu.c b/src/menu.c
+index 7c0f3b8..19c26fd 100755
+--- a/src/menu.c
++++ b/src/menu.c
+@@ -5687,6 +5687,12 @@ static void menu_open()
+     menu_help_active = 0;
+     keyrepeat = 0;
+     menu_shown = 1;
++    /* Midnight home screen, only when its optional module is installed.
++     * The Delete/Trash key still opens the original Magic Lantern menu.
++     * Leaving the submenu restores the normal tabs. No camera keys
++     * are intercepted or removed. */
++    if (entry_find_by_name("Focus", "Midnight"))
++        select_menu_by_name("Midnight", "Intervalometer settings");
+     //~ menu_hidden_should_display_help = 0;
+     if (lv)
+         menu_zebras_mirror_dirty = 1;

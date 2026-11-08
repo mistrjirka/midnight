@@ -34,14 +34,14 @@ python3 modules/astro/tools/package.py 6D.116 .astro-data/STARS.BIN
    card. Preserve the existing known-good card. Do not use firmware for a
    different camera or firmware version.
 3. Enable `astro` in the Magic Lantern **Modules** tab, then restart.
-4. Open **Focus > Astro tools > Measure star only**.
+4. Open **Trash > Midnight > Measure star now**.
    This examines Live View and DOES NOT drive the lens.
 5. **Solve test PGM** loads the synthetic `ML/ASTRO/TEST.PGM` from the SD
    card. Set hint RA **05:00**, Dec **+35°** and FOV **6.4°**.
-6. **Solve LiveView** instead uses the live sensor preview (not a long
+6. **Solve sky (hinted)** instead uses the live sensor preview (not a long
    exposure). Set actual focal length FOV and approximate RA/Dec. It needs
    at least eight detected/matched stars.
-7. **Auto focus star** moves an electronically driven lens and is **not
+7. **Auto focus (no mask)** moves an electronically driven lens and is **not
    tested on hardware**. Inspect firmware compatibility and lens behavior
    before exercising it. The autofocus switch must be in AF mode and
    continuous AF disabled. Focus with a bright star in magnified LiveView.
@@ -96,3 +96,22 @@ The tests convert these files to 360x240 8-bit input, then invoke the
 same portable C functions as the ARM module. We tested star detection
 and relative focus scoring, not on-camera CR2 decoding or Bahtinov
 spike geometry. HYG-generated fields remain the only plate-solve tests.
+
+## Midnight UI
+
+When the astro module is enabled, Delete/Trash opens the Midnight
+dashboard by default. It links to the original Magic Lantern Intervalometer
+and Bulb Timer controls (no shooting settings are duplicated).
+A Full Magic Lantern entry navigates to the original Shoot tab, and
+Q/LEFT closes the dashboard into the regular tabs.
+Without the module enabled, standard Magic Lantern menu behavior remains.
+
+The current focus metric measures the apparent radius of a star. It
+does not calculate a Bahtinov mask's central-spike offset.
+Use autofocus without the mask and remove any mask before imaging.
+A separate spike detection method needs to be implemented and tested.
+
+The current plate solver is still hinted. Initial all-sky triangle voting
+(541,148 patterns built from HYG stars to magnitude 7.5) ranked the
+correct sky patch first on only 2/5 synthetic fields. It was NOT
+integrated into the firmware. See docs/BLIND_PLATE_SOLVING.md.

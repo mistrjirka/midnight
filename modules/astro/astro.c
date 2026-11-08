@@ -329,6 +329,24 @@ static void start_action(int action)
         busy=0;
     }
 }
+/* Jump to the original Magic Lantern controls. Never duplicate its
+ * intervalometer/long-exposure config or replace the core shooting logic.
+ * Q/back from these submenus returns to their native tabs. */
+static MENU_SELECT_FUNC(open_intervalometer)
+{
+    select_menu_by_name("Intervalometer","Take a pic every");
+    menu_redraw();
+}
+static MENU_SELECT_FUNC(open_bulb_timer)
+{
+    select_menu_by_name("Bulb Timer","Exposure duration");
+    menu_redraw();
+}
+static MENU_SELECT_FUNC(open_normal_menus)
+{
+    select_menu_by_name("Shoot","Intervalometer");
+    menu_redraw();
+}
 static MENU_SELECT_FUNC(start_focus) { start_action(1); }
 static MENU_SELECT_FUNC(start_solve) { start_action(2); }
 static MENU_SELECT_FUNC(start_test) { start_action(3); }
@@ -354,37 +372,50 @@ static unsigned int astro_keypress(unsigned int key)
 }
 static struct menu_entry astro_menu[] = {
     {
-        .name="Astro tools",
-        .help="Experimental star autofocus and hinted plate solving.",
+        .name="Midnight",
+        .help="Astrophotography home. Q/LEFT returns to the standard tabs.",
         .children=(struct menu_entry[]) {
-            { .name="Measure star only", .select=start_measure,
-              .help="Read-only star detection and sharpness, no motor movement.",
+            { .name="Intervalometer settings", .select=open_intervalometer,
+              .help="Jump to ML's existing intervalometer and exposure interval.",
               .icon_type=IT_ACTION },
-            { .name="Auto focus star", .select=start_focus,
-              .help="5x/10x LiveView, bright centered star, lens AF switch ON.",
+            { .name="Bulb Timer settings", .select=open_bulb_timer,
+              .help="Jump to ML's existing bulb exposure timer.",
               .icon_type=IT_ACTION },
-            { .name="Solve LiveView", .select=start_solve,
-              .help="Use 1x LiveView; enter approximate RA/Dec and FOV first.",
+            { .name="Manual star focus", .priv=&focus_overlay,.min=0,.max=1,
+              .help="LiveView sharpness score, no motor. Use a bright star at 5x/10x." },
+            { .name="Measure star now", .select=start_measure,
+              .help="Read-only one-shot sharpness check; never moves a lens.",
               .icon_type=IT_ACTION },
-            { .name="Solve test PGM", .select=start_test,
-              .help="Load B:/ML/ASTRO/TEST.PGM and STARS.BIN.",
+            { .name="Auto focus (no mask)", .select=start_focus,
+              .help="Electronic lens only; uses star sharpness, NOT Bahtinov spikes.",
               .icon_type=IT_ACTION },
-            { .name="Pointing RA hour", .priv=&hint_rah, .min=0,.max=23 },
-            { .name="Pointing RA minute", .priv=&hint_ram,.min=0,.max=59 },
-            { .name="Pointing Dec deg", .priv=&hint_dec,.min=-85,.max=85 },
-            { .name="Frame width (0.1 deg)",.priv=&fov10,.min=0,.max=300,
-              .help="0 = auto from lens metadata. Otherwise set manual 1-30 deg." },
-            { .name="Manual focus readout",.priv=&focus_overlay,.min=0,.max=1,
-              .help="Measure one star each second. No AF motor required." },
-            { .name="Motor step size",.priv=&focus_step,.min=1,.max=3 },
-            { .name="Focus radius",.priv=&scan_radius,.min=1,.max=6 },
-            { .name="Focus shortcut",.priv=&shortcut,.min=0,.max=2,
-              .choices=CHOICES("Off","Double half-press","INFO button"),
-              .help="OFF by default. Disable conflicting shortcut features." },
-            { .name="Last result",.update=astro_status,.icon_type=IT_ACTION },
+            { .name="Solve sky (hinted)", .select=start_solve,
+              .help="Current solver still requires a rough RA/Dec hint. Blind solving under development.",
+              .icon_type=IT_ACTION },
+            { .name="Astronomy settings", .children=(struct menu_entry[]) {
+                { .name="Solve test PGM", .select=start_test,
+                  .help="Use the included synthetic image to test the solver.",
+                  .icon_type=IT_ACTION },
+                { .name="Pointing RA hour", .priv=&hint_rah, .min=0,.max=23 },
+                { .name="Pointing RA minute", .priv=&hint_ram,.min=0,.max=59 },
+                { .name="Pointing Dec deg", .priv=&hint_dec,.min=-85,.max=85 },
+                { .name="Frame width (0.1 deg)",.priv=&fov10,.min=0,.max=300,
+                  .help="0=auto if the lens reports focal length. Otherwise set manual 1-30 deg." },
+                { .name="Motor step size",.priv=&focus_step,.min=1,.max=3 },
+                { .name="Focus radius",.priv=&scan_radius,.min=1,.max=6 },
+                { .name="Focus shortcut",.priv=&shortcut,.min=0,.max=2,
+                  .choices=CHOICES("Off","Double half-press","INFO button"),
+                  .help="OFF by default; avoid conflicts with standard controls." },
+                { .name="Last result",.update=astro_status,.icon_type=IT_ACTION },
+                MENU_EOL
+            } },
+            { .name="Full Magic Lantern", .select=open_normal_menus,
+              .help="Leave the Midnight dashboard and show the original shooting menus.",
+              .icon_type=IT_ACTION },
             MENU_EOL
         },
-        .icon_type=IT_SUBMENU
+        .icon_type=IT_SUBMENU,
+        .submenu_width=710,
     },
 };
 static unsigned int astro_init(void)

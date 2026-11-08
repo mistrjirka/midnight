@@ -30,9 +30,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="v0.1.0-alpha.1"
+          tag="v0.2.0-alpha.1"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/magiclantern-astro-*.zip --clobber
           else
-            gh release create "$tag" dist/magiclantern-astro-*.zip --prerelease --title "Midnight experimental autofocus and plate solving" --notes "EXPERIMENTAL. Canon 600D 1.0.2 / 6D 1.1.6 only. Not validated on actual cameras. Use a spare SD card and read-only focus measurement first."
+            gh release create "$tag" dist/magiclantern-astro-*.zip --prerelease --title "Midnight astronomy-first menu and autofocus prototype" --notes "EXPERIMENTAL. Updated Trash-key Midnight dashboard with native Intervalometer/Bulb Timer links. Autofocus remains untested on cameras. Plate solving still needs rough coordinates; blind index research is not deployed. Use a spare SD card."
           fi

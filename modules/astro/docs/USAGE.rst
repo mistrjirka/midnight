@@ -14,7 +14,7 @@ Features:
 - Optional double half-shutter press or INFO shortcut for focus.
 - PGM input for QEMU and repeatable tests.
 
-The module does not alter the original Trap Focus feature.
+The module does not alter the original Trap Focus feature.\nTrash/Delete now opens Midnight first while the module is enabled.
 
 Camera models: 600D firmware 1.0.2 and 6D firmware 1.1.6 only.
 
@@ -23,15 +23,15 @@ Quick start
 
 1. Install only with matching same-checkout camera firmware and symbol file.
 2. Copy STARS.BIN generated from HYG v4.1 into ML/ASTRO/.
-3. Enable astro in the Modules tab, then open Focus > Astro tools.
-4. Select Measure star only at 5x/10x LiveView first. No lens movement.
-5. For actual autofocus set the lens to AF, disable continuous AF, center
-   a bright star and select Auto focus star. This action moves the lens.
+3. Enable astro in the Modules tab, restart, then press Trash > Midnight.
+4. Select Measure star now at 5x/10x LiveView first. No lens movement.
+5. For actual autofocus (no Bahtinov mask) set the lens to AF, disable continuous AF, center
+   a bright star and select Auto focus (no mask). This action moves the lens.
 6. For plate solving, use 1x LiveView and set pointing RA and Dec
    approximately (within several degrees), plus frame FOV width.
    600D at 200mm: 6.4 deg. 6D at 200mm: 10.3 deg.
 7. For deterministic QEMU tests place TEST.PGM (P5, 360x240) alongside
-   STARS.BIN and choose Solve test PGM.
+   STARS.BIN and choose Astronomy settings > Solve test PGM.
 8. Focus shortcut is off by default. Trap Focus remains unmodified.
 
 Important: the YUV LiveView feed is NOT a long exposure. Most deep-sky
@@ -77,3 +77,20 @@ LiveView frames and random sensor noise. Real-image smoke tests used:
 These are processed as 8-bit test images by the same C code.
 Mask-spike intersection/offset analysis and full-resolution CR2 decoding
 ON CAMERA are not implemented.
+
+Midnight home menu
+------------------
+
+- Intervalometer settings: original Magic Lantern interval controls.
+- Bulb Timer settings: original Magic Lantern bulb controls.
+- Manual star focus: toggle LiveView sharpness score.
+- Measure star now: one-shot, read-only sharpness check.
+- Auto focus (no mask): electronic focus steps and star size.
+- Solve sky (hinted): current RA/Dec solver.
+- Astronomy settings: more options and offline test image.
+- Full Magic Lantern: back to the standard menus.
+
+Trash/Delete opens Midnight after enabling the module; Q/Left backs out
+to the native tabs. No camera buttons are removed. A Bahtinov mask can
+still be used visually, but the spike-alignment algorithm is NOT
+implemented and the numeric star-size score assumes no mask.
