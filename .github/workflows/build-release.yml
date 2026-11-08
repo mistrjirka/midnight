@@ -1,0 +1,38 @@
+name: Build experimental Midnight firmware
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ARM toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-dev python3-docutils
+      - name: Reproduce both camera builds and run native tests
+        run: bash scripts/build.sh
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: midnight-experimental-firmware
+          path: dist/magiclantern-astro-*.zip
+          if-no-files-found: error
+      - name: Publish experimental prerelease
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="v0.1.0-alpha.1"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/magiclantern-astro-*.zip --clobber
+          else
+            gh release create "$tag" dist/magiclantern-astro-*.zip --prerelease --title "Midnight experimental autofocus and plate solving" --notes "EXPERIMENTAL. Canon 600D 1.0.2 / 6D 1.1.6 only. Not validated on actual cameras. Use a spare SD card and read-only focus measurement first."
+          fi

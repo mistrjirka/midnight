@@ -1,0 +1,79 @@
+Astro
+=====
+
+Experimental star autofocus and plate solving for 600D/6D.
+Do not use on irreplaceable hardware without hardware validation.
+
+:Author: Community experimental module
+:Summary: Plate solve and autofocus stars in LiveView
+:License: GPL-2.0-or-later
+
+Features:
+- Star sharpness measurement and guarded lens focus sweep in Live View.
+- Plate solving with a pointing hint using a compact star catalog.
+- Optional double half-shutter press or INFO shortcut for focus.
+- PGM input for QEMU and repeatable tests.
+
+The module does not alter the original Trap Focus feature.
+
+Camera models: 600D firmware 1.0.2 and 6D firmware 1.1.6 only.
+
+Quick start
+-----------
+
+1. Install only with matching same-checkout camera firmware and symbol file.
+2. Copy STARS.BIN generated from HYG v4.1 into ML/ASTRO/.
+3. Enable astro in the Modules tab, then open Focus > Astro tools.
+4. Select Measure star only at 5x/10x LiveView first. No lens movement.
+5. For actual autofocus set the lens to AF, disable continuous AF, center
+   a bright star and select Auto focus star. This action moves the lens.
+6. For plate solving, use 1x LiveView and set pointing RA and Dec
+   approximately (within several degrees), plus frame FOV width.
+   600D at 200mm: 6.4 deg. 6D at 200mm: 10.3 deg.
+7. For deterministic QEMU tests place TEST.PGM (P5, 360x240) alongside
+   STARS.BIN and choose Solve test PGM.
+8. Focus shortcut is off by default. Trap Focus remains unmodified.
+
+Important: the YUV LiveView feed is NOT a long exposure. Most deep-sky
+fields have too few visible stars without capture or frame stacking.
+The real camera image pipeline and motor steps are not yet validated.
+
+HYG v4.1 catalog credit: David Nash / Astronexus, CC BY-SA 4.0
+https://github.com/astronexus/HYG-Database
+
+Safety and test status
+----------------------
+
+This is a developer build, NOT hardware-tested firmware. The 600D/6D
+LiveView buffer and physical lens position feedback need validation.
+An autofocus request immediately fails if the lens is not electronically
+attached or AF is unavailable. Each single-step motor command must show
+a position change before any other command is sent. Lens timeout, no
+movement, missing frame or lost star => stop issuing focus commands.
+After a loss of position or lens communication, the camera does not
+attempt blind recovery motor movements.
+
+Focus > Astro tools > Manual focus readout shows a 1 Hz sharpness
+measurement that also works without autofocus. It is off by default.
+Smaller scores mean tighter star images for the SAME star and same zoom.
+It uses adaptive star radii and locks onto one star between samples.
+This is not a calibrated score comparable across different targets.
+
+Plate-solving FOV uses electronically reported focal length and sensor
+width by default, for Canon 600D (22.3 mm) or 6D (35.8 mm).
+Manual FOV remains available for non-electronic lenses and unusual
+magnification. Pointing is assumed within a few degrees. Solver
+requires 1x LiveView. Magnified LiveView is supported for focusing only.
+
+The unit tests simulate dead lens motors, missing feedback, loss of
+LiveView frames and random sensor noise. Real-image smoke tests used:
+- HorseHead.fits and M13_blue_0001.fits from Astropy data,
+  https://github.com/astropy/astropy-data
+- Canon EOS 600D CR2 sample from Photography Blog,
+  https://www.photographyblog.com/reviews/canon_eos_600d_review
+- Bahtinov diffraction-pattern example by Axleottal, public domain,
+  https://commons.wikimedia.org/wiki/File:Bahtinov_mask_example.jpg
+
+These are processed as 8-bit test images by the same C code.
+Mask-spike intersection/offset analysis and full-resolution CR2 decoding
+ON CAMERA are not implemented.
