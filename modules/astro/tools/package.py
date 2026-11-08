@@ -17,6 +17,9 @@ def package(camera: str, catalog: pathlib.Path) -> pathlib.Path:
             out.writestr(info,orig.read(info.filename))
         assert "ML/modules/astro.mo" in orig.namelist(), "Astro module missing"
         out.write(catalog,"ML/ASTRO/STARS.BIN",compress_type=zipfile.ZIP_DEFLATED)
+        index=catalog.with_suffix(".IDX")
+        assert index.is_file(), "Generate STARS.IDX with make_catalog.py"
+        out.write(index,"ML/ASTRO/STARS.IDX",compress_type=zipfile.ZIP_DEFLATED)
         synthetic=ROOT/".astro-data"/"TEST.PGM"
         if synthetic.is_file():
             out.write(synthetic,"ML/ASTRO/TEST.PGM",
@@ -33,18 +36,21 @@ def package(camera: str, catalog: pathlib.Path) -> pathlib.Path:
             "EXPERIMENTAL. NOT TESTED ON PHYSICAL CAMERAS.\n"
             "Requires matching Canon 600D 1.0.2 or Canon 6D 1.1.6 firmware.\n"
             "Do not install on an unsupported camera. Use a spare SD card.\n"
-            "Enable 'astro' in ML Modules. Read-only: Focus > Astro tools >\n"
-            "Measure star only. This option does not move the lens.\n"
+            "Enable 'astro' in ML Modules and restart.\n"
+            "Read-only: Trash > Midnight > Measure star now.\n"
             "Autofocus sends focus commands and has not been hardware tested.\n"
             "Shortcuts are disabled by default. Normal Trap Focus unchanged.\n"
-            "Plate solving requires approximate coordinates and sufficient stars\n"
-            "visible in LiveView. Long-exposure acquisition is NOT implemented.\n"
+            "Plate solving requires an approximate position and enough stars\n"
+            "visible in LiveView. Long exposure RAW is NOT implemented.\n"
+            "STARS.BIN and STARS.IDX must both be copied to ML/ASTRO.\n"
+            "The solver shows separate RA and Dec fields in Astronomy settings.\n"
             "To demo without a sensor, use Solve test PGM and set the hint to\n"
             "RA 05:00 Dec +35 and FOV width 6.4 degrees. TEST.PGM is synthetic.\n",
             compress_type=zipfile.ZIP_DEFLATED)
     with zipfile.ZipFile(target) as z:
         assert z.testzip() is None
-        for required in ("autoexec.bin","ML/modules/astro.mo","ML/ASTRO/STARS.BIN"):
+        for required in ("autoexec.bin","ML/modules/astro.mo",
+                         "ML/ASTRO/STARS.BIN","ML/ASTRO/STARS.IDX"):
             assert required in z.namelist()
     return target
 

@@ -30,9 +30,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="v0.2.0-alpha.1"
+          tag="v0.2.1-alpha.1"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/magiclantern-astro-*.zip --clobber
           else
-            gh release create "$tag" dist/magiclantern-astro-*.zip --prerelease --title "Midnight astronomy-first menu and autofocus prototype" --notes "EXPERIMENTAL. Updated Trash-key Midnight dashboard with native Intervalometer/Bulb Timer links. Autofocus remains untested on cameras. Plate solving still needs rough coordinates; blind index research is not deployed. Use a spare SD card."
+            gh release create "$tag" dist/magiclantern-astro-*.zip --prerelease --title "Midnight indexed plate solver and focus tools" --notes "EXPERIMENTAL. 5 degree x 5 degree indexed star catalog reduces SD reads. 600D QEMU test matched 9 stars. Displays RA and Dec separately. Autofocus untested on physical cameras. Blind plate solving not included. Use a spare SD card."
           fi

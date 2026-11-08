@@ -44,6 +44,8 @@ static int overlay_x = IM_W/2, overlay_y = IM_H/2;
 static int overlay_lost = 0;
 static int requested_action = 0;
 static char last_status[64] = "Ready";
+static char solve_ra_text[24] = "";
+static char solve_dec_text[24] = "";
 static uint8_t *image = 0;
 static astro_star observed[ASTRO_MAX_STARS];
 static astro_catalog nearby[ASTRO_MAX_CATALOG];
@@ -69,27 +71,35 @@ static int capture_liveview(void)
     }
     return 1;
 }
-static void path_from_card(char *out, size_t size, const char *rel)
+/* File reads may complete partially on Canon's SD interface. Ensure
+ * that each requested block is consumed, or stop on a real I/O error. */
+static int read_exact(FILE *f, void *dest, int count)
 {
-    const struct card_info *card=get_ml_card();
-    char drive=(card && card->drive_letter) ? card->drive_letter[0] : 'B';
-    snprintf(out,size,"%c:/ML/ASTRO/%s",drive,rel);
+    uint8_t *p=(uint8_t*)dest;
+    while (count>0) {
+        int chunk=count>4096?4096:count;
+        int got=FIO_ReadFile(f,p,chunk);
+        if(got<=0 || got>chunk)return 0;
+        p+=got; count-=got;
+    }
+    return 1;
 }
 
 /* For QEMU and desktop tests: one fixed-format P5 grayscale frame.
  * Strict header avoids any parsing of untrusted data on a camera. */
 static int capture_test_pgm(void)
 {
-    char path[FIO_MAX_PATH_LENGTH];
     char header[15];
-    FILE *f;
+    FILE *f=FIO_OpenFile("ML/ASTRO/TEST.PGM",O_RDONLY | O_SYNC);
     static const char expected[]="P5\n360 240\n255\n";
-    path_from_card(path,sizeof(path),"TEST.PGM");
-    f=FIO_OpenFile(path,O_RDONLY);
-    if(!f)return 0;
-    int ok=FIO_ReadFile(f,header,15)==15 && memcmp(header,expected,15)==0 &&
-           FIO_ReadFile(f,image,IM_W*IM_H)==IM_W*IM_H;
+    if(!f) {strcpy(last_status,"TEST.PGM not found");return 0;}
+    if(!read_exact(f,header,15) || memcmp(header,expected,15)!=0) {
+        strcpy(last_status,"TEST.PGM invalid header");
+        FIO_CloseFile(f);return 0;
+    }
+    int ok=read_exact(f,image,IM_W*IM_H);
     FIO_CloseFile(f);
+    if(!ok)strcpy(last_status,"TEST.PGM read failed");
     return ok;
 }
 
@@ -105,53 +115,110 @@ static int cos_dec_q14(int deg)
     if(a>=90)return 0;
     return lut[a/5]+((int)lut[a/5+1]-(int)lut[a/5])*(a%5)/5;
 }
-/* Binary catalogue, sourced from HYG (see tools/make_catalog.py).
- * All data is on SD. Keep only 64 brightest stars near the hint.
- * File access uses buffered sequential reads and static scratch space. */
+#define ASTRO_RA_BINS 72
+#define ASTRO_DEC_BINS 36
+#define ASTRO_TILE_COUNT (ASTRO_RA_BINS * ASTRO_DEC_BINS)
+/* 5-degree, 2D direct-address index. One small table in RAM and one
+ * contiguous binary catalog on SD. Each sky tile is a file segment,
+ * not an individual FAT directory entry. */
+static uint32_t tile_offsets[ASTRO_TILE_COUNT+1];
+
 static int read_catalog(int fov_cdeg)
 {
-    char path[FIO_MAX_PATH_LENGTH], header[16];
+    char header[20];
     struct record { uint32_t ra; int32_t dec; uint16_t mag10; uint16_t pad; };
-    struct record recs[48];  /* 576-byte stack scratch; no heap allocation */
-    FILE *f;
-    uint32_t count,version,bytes;
-    int n=0,cosq=cos_dec_q14(hint_dec), limit_x=fov_cdeg/2+360;
-    int limit_y=fov_cdeg/3+360;
+    struct record recs[128];
+    uint32_t count,version,bytes,index_version,index_count,nra,ndec;
+    int n=0,cosq=cos_dec_q14(hint_dec);
+    int limit_x=fov_cdeg/2+360, limit_y=fov_cdeg/3+360;
     int32_t ra_hint=(hint_rah*15*10000 + hint_ram*2500);
     int32_t dec_hint=hint_dec*10000;
-    path_from_card(path,sizeof(path),"STARS.BIN");
-    f=FIO_OpenFile(path,O_RDONLY);
+
+    FILE *idx=FIO_OpenFile("ML/ASTRO/STARS.IDX",O_RDONLY | O_SYNC);
+    if(!idx)return -2;
+    if(!read_exact(idx,header,20) || memcmp(header,"SIDX",4)) {
+        FIO_CloseFile(idx);return -2;
+    }
+    memcpy(&index_version,header+4,4);
+    memcpy(&index_count,header+8,4);
+    memcpy(&nra,header+12,4);
+    memcpy(&ndec,header+16,4);
+    if(index_version!=2 || nra!=ASTRO_RA_BINS ||
+       ndec!=ASTRO_DEC_BINS || index_count>200000 ||
+       !read_exact(idx,tile_offsets,sizeof(tile_offsets))) {
+        FIO_CloseFile(idx);return -2;
+    }
+    FIO_CloseFile(idx);
+    if(tile_offsets[0] || tile_offsets[ASTRO_TILE_COUNT]!=index_count)
+        return -2;
+    for(int i=1;i<=ASTRO_TILE_COUNT;i++)
+        if(tile_offsets[i]<tile_offsets[i-1] ||
+           tile_offsets[i]>index_count)return -2;
+
+    FILE *f=FIO_OpenFile("ML/ASTRO/STARS.BIN",O_RDONLY | O_SYNC);
     if(!f)return -1;
-    if(FIO_ReadFile(f,header,16)!=16 || memcmp(header,CATALOG_MAGIC,4)) {
-        FIO_CloseFile(f); return -1;
+    if(!read_exact(f,header,16) || memcmp(header,CATALOG_MAGIC,4)) {
+        FIO_CloseFile(f);return -1;
     }
     memcpy(&version,header+4,4);
     memcpy(&count,header+8,4);
     memcpy(&bytes,header+12,4);
-    if(version!=CATALOG_VERSION || bytes!=CATALOG_ENTRY_BYTES || count>200000) {
-        FIO_CloseFile(f); return -1;
+    if(version!=CATALOG_VERSION || bytes!=CATALOG_ENTRY_BYTES ||
+       count!=index_count) {
+        FIO_CloseFile(f);return -1;
     }
-    for(uint32_t offset=0;offset<count;) {
-        uint32_t take=(count-offset < 48)? count-offset:48;
-        if(FIO_ReadFile(f,recs,take*12)!=(int)(take*12)) {n=-1;break;}
-        for(uint32_t j=0;j<take;j++) {
-            int32_t dra=(int32_t)recs[j].ra-ra_hint;
-            int32_t ddec=recs[j].dec-dec_hint;
-            if(dra>1800000)dra-=3600000;
-            if(dra< -1800000)dra+=3600000;
-            int x=(int)((int64_t)dra*cosq/16384/100);
-            int y=(int)(ddec/100);
-            if(x < -limit_x || x > limit_x || y < -limit_y || y>limit_y)continue;
-            int mag=recs[j].mag10, k;
-            /* maintain ascending magnitude ordering */
-            if(n==ASTRO_MAX_CATALOG && mag>=nearby[n-1].mag10)continue;
-            if(n<ASTRO_MAX_CATALOG)n++;
-            for(k=n-1;k>0 && nearby[k-1].mag10>mag;k--)nearby[k]=nearby[k-1];
-            nearby[k].x=x;
-            nearby[k].y=y;
-            nearby[k].mag10=mag;
+
+    /* Pointing hint defines a rectangle in the tangent plane.
+     * Conservatively include a 5-degree tile whenever it may overlap.
+     * The margin avoids missing stars at bin boundaries. */
+    int64_t ra_half=(cosq>0) ?
+        ((int64_t)limit_x*100*16384+cosq-1)/cosq+1000 : 1800000;
+    if(ra_half>1800000)ra_half=1800000;
+    int dec_half=limit_y*100+1000;
+    for(int decbin=0;decbin<ASTRO_DEC_BINS;decbin++) {
+        int dec_center=-900000+decbin*50000+25000;
+        int decdelta=dec_center-dec_hint;
+        if(decdelta<0)decdelta=-decdelta;
+        if(decdelta>dec_half+25000)continue;
+        for(int rabin=0;rabin<ASTRO_RA_BINS;rabin++) {
+            int tile=decbin*ASTRO_RA_BINS+rabin;
+            int ra_center=rabin*50000+25000;
+            int delta=ra_center-ra_hint;
+            if(delta<0)delta=-delta;
+            if(delta>1800000)delta=3600000-delta;
+            if((int64_t)delta>ra_half+25000)continue;
+            uint32_t pos=tile_offsets[tile];
+            uint32_t end=tile_offsets[tile+1];
+            if(pos==end)continue;
+            int64_t byteoffset=16+(int64_t)pos*CATALOG_ENTRY_BYTES;
+            if(FIO_SeekSkipFile(f,byteoffset,SEEK_SET)!=byteoffset) {
+                FIO_CloseFile(f);return -1;
+            }
+            while(pos<end) {
+                int take=end-pos<128?end-pos:128;
+                if(!read_exact(f,recs,take*CATALOG_ENTRY_BYTES)) {
+                    FIO_CloseFile(f);return -1;
+                }
+                for(int j=0;j<take;j++) {
+                    int32_t dra=(int32_t)recs[j].ra-ra_hint;
+                    int32_t ddec=recs[j].dec-dec_hint;
+                    if(dra>1800000)dra-=3600000;
+                    if(dra< -1800000)dra+=3600000;
+                    int x=(int)((int64_t)dra*cosq/16384/100);
+                    int y=(int)(ddec/100);
+                    if(x< -limit_x || x>limit_x || y< -limit_y || y>limit_y)
+                        continue;
+                    int mag=recs[j].mag10,k;
+                    if(n==ASTRO_MAX_CATALOG && mag>=nearby[n-1].mag10)
+                        continue;
+                    if(n<ASTRO_MAX_CATALOG)n++;
+                    for(k=n-1;k>0 && nearby[k-1].mag10>mag;k--)
+                        nearby[k]=nearby[k-1];
+                    nearby[k].x=x;nearby[k].y=y;nearby[k].mag10=mag;
+                }
+                pos+=take;
+            }
         }
-        offset+=take;
     }
     FIO_CloseFile(f);
     return n;
@@ -221,12 +288,14 @@ static void do_solve(int test_mode)
         return;
     }
     if (!(test_mode?capture_test_pgm():capture_liveview())) {
-        strcpy(last_status,test_mode?"Missing/invalid TEST.PGM":"No LiveView frame");
+        if(!test_mode) strcpy(last_status,"No LiveView frame");
         return;
     }
     n=astro_find_stars(image,IM_W,IM_H,IM_W,observed,ASTRO_MAX_STARS);
     if(n<8) {snprintf(last_status,sizeof(last_status),"Only %d stars, need >=8",n);return;}
+    strcpy(last_status,"Matching stars...");
     nc=read_catalog(fov);
+    if(nc==-2) {strcpy(last_status,"Missing/invalid STARS.IDX");return;}
     if(nc<0) {strcpy(last_status,"Missing/invalid STARS.BIN");return;}
     if(nc<8) {strcpy(last_status,"Not enough catalog stars");return;}
     if(!astro_solve_hinted(observed,n,nearby,nc,IM_W,IM_H,fov,&result)) {
@@ -241,11 +310,18 @@ static void do_solve(int test_mode)
     int32_t dec=(int32_t)hint_dec*10000+result.center_y_cdeg*100;
     while(ra<0)ra+=3600000;
     while(ra>=3600000)ra-=3600000;
-    snprintf(last_status,sizeof(last_status),
-             "%d stars RA %02d:%02d Dec %c%d.%d",
-             result.matched,ra/150000,(ra%150000)/2500,
-             dec<0?'-':'+',(dec<0?-dec:dec)/10000,
-             (dec<0?-dec:dec)%10000/1000);
+    /* RA as hours/minutes/seconds, Dec as degrees/minutes/seconds.
+     * Separate menu rows prevent clipped coordinates on 720px LCD. */
+    uint32_t ra_seconds=(uint32_t)(((int64_t)ra*86400+1800000)/3600000)%86400;
+    int32_t dec_abs=dec<0?-dec:dec;
+    uint32_t dec_seconds=(uint32_t)(((int64_t)dec_abs*3600+5000)/10000);
+    snprintf(solve_ra_text,sizeof(solve_ra_text),"%02d:%02d:%02d",
+             (int)(ra_seconds/3600),(int)((ra_seconds%3600)/60),
+             (int)(ra_seconds%60));
+    snprintf(solve_dec_text,sizeof(solve_dec_text),"%s%02dd%02dm%02ds",
+             dec<0?"-":"+",(int)(dec_seconds/3600),
+             (int)((dec_seconds%3600)/60),(int)(dec_seconds%60));
+    snprintf(last_status,sizeof(last_status),"Solved: %d stars",result.matched);
 }
 static void do_measure(void)
 {
@@ -323,6 +399,10 @@ static void start_action(int action)
     }
     busy=1;
     requested_action=action;
+    if(action==2 || action==3) {
+        solve_ra_text[0]=0;
+        solve_dec_text[0]=0;
+    }
     strcpy(last_status,"Running...");
     if(!task_create("astro_task",0x1d,0x4000,astro_worker,0)) {
         strcpy(last_status,"Could not start worker task");
@@ -354,7 +434,17 @@ static MENU_SELECT_FUNC(start_measure) { start_action(4); }
 static MENU_UPDATE_FUNC(astro_status)
 {
     MENU_SET_VALUE("%s",last_status);
-    MENU_SET_HELP("Astro proof of concept; not tested on physical cameras.");
+    MENU_SET_HELP("Status of the last astronomy action.");
+}
+static MENU_UPDATE_FUNC(astro_ra_result)
+{
+    MENU_SET_VALUE("%s",solve_ra_text[0]?solve_ra_text:"--");
+    MENU_SET_HELP("Solved right ascension, hours:minutes:seconds.");
+}
+static MENU_UPDATE_FUNC(astro_dec_result)
+{
+    MENU_SET_VALUE("%s",solve_dec_text[0]?solve_dec_text:"--");
+    MENU_SET_HELP("Solved declination, signed degrees/minutes/seconds.");
 }
 static unsigned int astro_keypress(unsigned int key)
 {
@@ -392,7 +482,7 @@ static struct menu_entry astro_menu[] = {
             { .name="Solve sky (hinted)", .select=start_solve,
               .help="Current solver still requires a rough RA/Dec hint. Blind solving under development.",
               .icon_type=IT_ACTION },
-            { .name="Astronomy settings", .children=(struct menu_entry[]) {
+            { .name="Astronomy settings", .select=menu_open_submenu, .children=(struct menu_entry[]) {
                 { .name="Solve test PGM", .select=start_test,
                   .help="Use the included synthetic image to test the solver.",
                   .icon_type=IT_ACTION },
@@ -407,6 +497,8 @@ static struct menu_entry astro_menu[] = {
                   .choices=CHOICES("Off","Double half-press","INFO button"),
                   .help="OFF by default; avoid conflicts with standard controls." },
                 { .name="Last result",.update=astro_status,.icon_type=IT_ACTION },
+                { .name="Solved RA",.update=astro_ra_result,.icon_type=IT_ACTION },
+                { .name="Solved Dec",.update=astro_dec_result,.icon_type=IT_ACTION },
                 MENU_EOL
             } },
             { .name="Full Magic Lantern", .select=open_normal_menus,

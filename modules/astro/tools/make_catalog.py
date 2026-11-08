@@ -12,6 +12,10 @@ import struct
 
 HEADER = struct.Struct("<4sIII")
 RECORD = struct.Struct("<IiHH")
+INDEX_HEADER = struct.Struct("<4sIII")
+RA_BINS = 72     # 5-degree right ascension regions
+DEC_BINS = 36    # 5-degree declination regions
+TILE_COUNT = RA_BINS * DEC_BINS
 
 def make_catalog(source: pathlib.Path, dest: pathlib.Path, limiting_mag: float) -> int:
     stars = []
@@ -26,11 +30,31 @@ def make_catalog(source: pathlib.Path, dest: pathlib.Path, limiting_mag: float) 
             dec = round(float(row["dec"]) * 10000)
             mag10 = max(0, min(65535, round((mag + 5) * 10)))
             stars.append((ra, dec, mag10, 0))
+    # Each record belongs to one fixed 5x5 degree sky tile.
+    # Fixed integer IDs avoid a hash table's RAM and collision overhead.
+    def tile_id(record: tuple[int, int, int, int]) -> int:
+        ra, dec, _, _ = record
+        ra_bin = ra // 50000
+        dec_bin = min(DEC_BINS - 1, max(0, (dec + 900000) // 50000))
+        return dec_bin * RA_BINS + ra_bin
+
+    stars.sort(key=lambda rec: (tile_id(rec), rec[0], rec[1]))
+    bounds = [0] * (TILE_COUNT + 1)
+    for star in stars:
+        bounds[tile_id(star) + 1] += 1
+    for i in range(1, len(bounds)):
+        bounds[i] += bounds[i-1]
+    assert bounds[-1] == len(stars)
     dest.parent.mkdir(parents=True, exist_ok=True)
     with dest.open("wb") as file:
         file.write(HEADER.pack(b"ASTR", 1, len(stars), RECORD.size))
         for star in stars:
             file.write(RECORD.pack(*star))
+    # 20-byte header plus 2593 offsets (10,392 bytes total).
+    with dest.with_suffix(".IDX").open("wb") as file:
+        file.write(struct.pack("<4sIIII", b"SIDX", 2, len(stars),
+                               RA_BINS, DEC_BINS))
+        file.write(struct.pack(f"<{TILE_COUNT+1}I", *bounds))
     return len(stars)
 
 if __name__ == "__main__":

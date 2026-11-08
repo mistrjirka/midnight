@@ -115,3 +115,12 @@ The current plate solver is still hinted. Initial all-sky triangle voting
 (541,148 patterns built from HYG stars to magnitude 7.5) ranked the
 correct sky patch first on only 2/5 synthetic fields. It was NOT
 integrated into the firmware. See docs/BLIND_PLATE_SOLVING.md.
+
+## 2D catalog index
+
+A 5x5 degree sky grid groups 99,049 HYG stars by tile, with 2,592
+logical tiles in one STARS.BIN file. A 10,392-byte STARS.IDX maps each
+tile to an offset and length. No per-tile files or hash collisions.
+62 sky fields returned the same candidate stars as a full scan.
+At 200mm, the 600D example needs 772/99,049 stars loaded (128.3x
+less record I/O). These are bytes/records, not an on-camera timing.

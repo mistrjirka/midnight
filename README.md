@@ -7,7 +7,7 @@ An astronomy-first interface for [Magic Lantern](https://github.com/reticulatedp
 ## Install
 
 1. Check your camera version under **Canon MENU → Firmware Ver.**
-2. Download the matching ZIP from the [Midnight release](https://github.com/mistrjirka/midnight/releases/tag/v0.2.0-alpha.1).
+2. Download the matching ZIP from the [Midnight release](https://github.com/mistrjirka/midnight/releases/tag/v0.2.1-alpha.1).
 3. **Already have Magic Lantern?** Extract the **entire ZIP** onto a spare, bootable Magic Lantern SD card. Replace the existing Magic Lantern files. Do not rerun the installer.
 4. **Fresh card?** Format it in the camera, extract the ZIP at the SD-card root, then use **MENU → Firmware Ver. → Firmware Update** in **M mode** to run **ML-SETUP.FIR**. Follow its instructions and restart. This installs the Magic Lantern boot setup, not a Canon firmware update.
 5. Press **Trash/Delete** to open Magic Lantern, enable **astro** in **Modules**, and restart.
@@ -18,7 +18,7 @@ An astronomy-first interface for [Magic Lantern](https://github.com/reticulatedp
 
 <img src="docs/images/astro-tools-menu.png" alt="Mockup of Midnight dashboard with intervalometer, bulb timer, focus and plate solving" width="600">
 
-*UI illustrations, not photos from a real camera.*
+*The interface pictures in this README are labeled illustrations. Actual 600D QEMU screenshots have verified that the Midnight menu opens and the bundled plate-solving test completes.*
 
 | Option | What it does |
 |---|---|
@@ -53,9 +53,13 @@ Use **1× Live View** with enough visible stars. Set approximate **Pointing RA h
 
 <img src="docs/images/plate-solving-preview.png" alt="Illustrative pointing result, with rough RA and Dec hint" width="600">
 
-**Blind solving is not ready yet.** A first all-sky index failed 3 of 5 synthetic test fields, so it is not enabled. The current solver also uses Live View rather than long RAW exposures and may miss faint stars. [Blind-solving research](docs/BLIND_PLATE_SOLVING.md).
+**Blind solving is not ready yet.** A first all-sky index failed 3 of 5 synthetic test fields, so it is not enabled. The current solver uses Live View rather than long RAW exposures and may miss faint stars. The SD catalog now uses a small 2D sky index, so it reads only overlapping regions. [Blind-solving research](docs/BLIND_PLATE_SOLVING.md).
+
+**Result display:** The Astronomy settings menu shows **Solved RA** (hh:mm:ss), **Solved Dec** (degrees/minutes/seconds), and **Last result** on separate rows. In the 600D QEMU test, the bundled sample solved to RA **05:04:56**, Dec **+35°36′00″**, using 9 stars. This has not been validated on real sky images. No star-marker overlay yet.
 
 **Offline test:** Choose **Astronomy settings → Solve test PGM** with RA **05:00**, Dec **+35°**, and field width **64**. The included test image needs no sky or lens.
+
+The ZIP includes **STARS.BIN** and **STARS.IDX**. The camera loads only nearby 5° × 5° sky regions from SD instead of scanning the full catalog. The index itself uses 10 KB RAM. You do not need to configure it.
 
 ## Troubleshooting
 

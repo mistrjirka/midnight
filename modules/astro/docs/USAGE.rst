@@ -94,3 +94,13 @@ Trash/Delete opens Midnight after enabling the module; Q/Left backs out
 to the native tabs. No camera buttons are removed. A Bahtinov mask can
 still be used visually, but the spike-alignment algorithm is NOT
 implemented and the numeric star-size score assumes no mask.
+
+Spatial catalog index
+---------------------
+
+The HYG catalog is stored in one contiguous STARS.BIN file sorted by
+5-degree RA/Dec sky tiles, not thousands of small files.
+STARS.IDX is a 10,392-byte direct-offset table. The camera reads only
+overlapping tile ranges using FIO_SeekSkipFile. This significantly
+reduces reads for hinted solving without a hash table or large RAM use.
+All index records must come from the same catalog version.
