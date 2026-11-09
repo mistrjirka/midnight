@@ -17,6 +17,43 @@ RA_BINS = 72     # 5-degree right ascension regions
 DEC_BINS = 36    # 5-degree declination regions
 TILE_COUNT = RA_BINS * DEC_BINS
 
+# Bayer letters are stored as one control byte, 0x01 (alpha) .. 0x18 (omega).
+# The camera draws these with its own Greek glyphs; ML fonts are ASCII-only.
+GREEK = ("Alp", "Bet", "Gam", "Del", "Eps", "Zet", "Eta", "The", "Iot", "Kap",
+         "Lam", "Mu", "Nu", "Xi", "Omi", "Pi", "Rho", "Sig", "Tau", "Ups",
+         "Phi", "Chi", "Psi", "Ome")
+FAMOUS_MAG = 2.0  # brighter stars keep their proper name (Vega, Polaris)
+
+def star_label(row: dict, mag: float) -> bytes:
+    """Return the <=22-byte label for one HYG row, or b"" for none.
+
+    Order: famous proper name, Bayer (Greek glyph + optional component digit
+    + constellation), other proper name, Flamsteed, Hipparcos number.
+    The set of labelled stars is identical to the former "proper or bf or
+    HIP" rule, so label IDs and the generated sky index stay compatible.
+    """
+    proper = row["proper"].strip().encode("ascii", "ignore")
+    con = row["con"].strip().encode("ascii", "ignore")
+    bayer = row["bayer"].strip()
+    flam = row["flam"].strip()
+    if proper and mag <= FAMOUS_MAG:
+        return proper[:22]
+    if bayer and con:
+        letter, _, component = bayer.partition("-")
+        if letter in GREEK:
+            return (bytes([GREEK.index(letter) + 1]) +
+                    component.encode("ascii", "ignore") + b" " + con)[:22]
+    if proper:
+        return proper[:22]
+    if flam and con:
+        return (flam.encode("ascii", "ignore") + b" " + con)[:22]
+    bf = " ".join(row["bf"].split()).encode("ascii", "ignore")
+    if bf:
+        return bf[:22]
+    if mag <= 7.5 and row["hip"].strip():
+        return ("HIP " + row["hip"].strip()).encode("ascii")[:22]
+    return b""
+
 def make_catalog(source: pathlib.Path, dest: pathlib.Path, limiting_mag: float) -> int:
     stars = []
     labels = [b""]  # ID 0 means no label.
@@ -30,13 +67,8 @@ def make_catalog(source: pathlib.Path, dest: pathlib.Path, limiting_mag: float) 
             ra = round(float(row["ra"]) * 15 * 10000) % 3600000
             dec = round(float(row["dec"]) * 10000)
             mag10 = max(0, min(65535, round((mag + 5) * 10)))
-            # Prefer the proper star name, then Bayer/Flamsteed, then
-            # Hipparcos number for bright unnamed stars. The same label ID
-            # is placed into the unused 16-bit record field.
-            label = row["proper"].strip() or " ".join(row["bf"].split())
-            if not label and mag <= 7.5 and row["hip"].strip():
-                label = "HIP " + row["hip"].strip()
-            encoded = label.encode("ascii","ignore")[:22]
+            # The same label ID is placed into the unused 16-bit record field.
+            encoded = star_label(row, mag)
             label_id = 0
             if encoded:
                 labels.append(encoded)

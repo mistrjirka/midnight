@@ -26,19 +26,14 @@
 #include "astro_streak.h"
 #include "astro_psf.h"
 #include "astro_sky.h"
+#include "astro_wcs.h"
+#include "astro_overlay.h"
+#include "astro_draw.h"
 #include <timer.h>
 #include <powersave.h>
 
 #define IM_W 360
 #define IM_H 240
-#define CATALOG_MAGIC "ASTR"
-#define CATALOG_VERSION 1
-#define CATALOG_ENTRY_BYTES 12
-#define ANNOTATION_MAX ASTRO_MAX_STARS
-struct annotation {int16_t x,y;char name[24];};
-static struct annotation matched_labels[ANNOTATION_MAX];
-static int n_matched_labels=0;
-static uint16_t nearby_names[ASTRO_MAX_CATALOG];
 static volatile int gallery_prompt=0;
 static volatile int gallery_results=0;
 static volatile int gallery_result_pending=0;
@@ -52,9 +47,25 @@ static uint32_t solve_started=0,solve_elapsed=0;
 static sky_solution sky_result;
 static const char *test_files[]={"ML/ASTRO/TEST.PGM","ML/ASTRO/TEST1.PGM", "ML/ASTRO/TEST2.PGM","ML/ASTRO/TEST3.PGM"};
 
-static int hint_rah=5; /* selected internally by blind lookup */
-static int hint_ram=0;
-static int hint_dec=35;
+/* Lens: 0 blind (no hint), 1 focal length reported by an EF lens,
+ * 2 manual value for lenses without electronic contacts. */
+static CONFIG_INT("astro.focal_src", focal_source, 0);
+static CONFIG_INT("astro.focal_mm", manual_focal, 50);
+/* Target picker: catalogue (astro_overlay.h IDs) and number. */
+static CONFIG_INT("astro.tgt_cat", target_cat, ASTRO_CAT_M);
+static CONFIG_INT("astro.tgt_num", target_num, 42);
+static CONFIG_INT("astro.tgt_on", target_on, 1);
+/* Overlay layers drawn over solved frames. */
+static CONFIG_INT("astro.ov_stars", ov_stars, 1);
+static CONFIG_INT("astro.ov_dso", ov_dso, 1);
+static CONFIG_INT("astro.ov_const", ov_const, 1);
+static CONFIG_INT("astro.ov_dsomag", ov_dso_mag, 9);
+static astro_scene scene, shown_scene;
+static int scene_valid=0;
+static astro_target target;
+static volatile int target_cat_loaded=0,target_num_loaded=0,lookup_busy=0;
+static char target_info[48]="";
+static char solve_focal_text[24]="";
 static CONFIG_INT("astro.step", focus_step, 1); /* Canon focus motor speed 1..3 */
 static CONFIG_INT("astro.scanradius", scan_radius, 3);
 static CONFIG_INT("astro.shortcut", shortcut, 3); /* DISP (600D) / LCD light (6D) */
@@ -70,7 +81,7 @@ static char solve_ra_text[24] = "";
 static char solve_dec_text[24] = "";
 static uint8_t *image = 0;
 static astro_star observed[ASTRO_MAX_STARS];
-static astro_catalog nearby[ASTRO_MAX_CATALOG];
+static int observed_count=0;
 
 /* On Canon's UYVY buffer the luma samples occupy byte 1 of each 2-byte
  * pixel. Read only inside the dimensions and pitch reported by ML. */
@@ -147,208 +158,14 @@ static int capture_test_pgm(void)
     return ok;
 }
 
-/* cos(declination), in Q14. One 5-degree lookup/interpolation.
- * Catalogue plane is accurate enough within a few degrees of hint. */
-static int cos_dec_q14(int deg)
-{
-    static const uint16_t lut[]={
-        16384,16322,16135,15825,15396,14849,14189,13422,12552,11585,
-        10531,9396,8192,6925,5603,4240,2845,1428,0
-    };
-    int a=deg<0?-deg:deg;
-    if(a>=90)return 0;
-    return lut[a/5]+((int)lut[a/5+1]-(int)lut[a/5])*(a%5)/5;
-}
-/* A plane with x=RA*cos(dec_hint), y=Dec is not flat enough across a
- * several-degree star field, especially near the celestial poles.
- * Apply a second-order tangent-plane approximation in centidegrees.
- * tan(dec) is Q14, and 5729.58=100*(180/pi). Avoid floating point. */
-static int32_t tan_dec_q14(int dec)
-{
-    int cosq=cos_dec_q14(dec);
-    if(cosq<1)return 0;
-    int sinq=cos_dec_q14(90-(dec<0?-dec:dec));
-    if(dec<0)sinq=-sinq;
-    return (int32_t)(((int64_t)sinq*16384)/cosq);
-}
-static void tangent_project(int x,int y,int tanq,int *px,int *py)
-{
-    int64_t div=(int64_t)572958*16384;
-    int64_t dx=((int64_t)x*y*tanq*100)/div;
-    int64_t dy=((int64_t)x*x*tanq*100)/(2*div);
-    *px=x-(int)dx;
-    *py=y+(int)dy;
-}
-#define ASTRO_RA_BINS 72
-#define ASTRO_DEC_BINS 36
-#define ASTRO_TILE_COUNT (ASTRO_RA_BINS * ASTRO_DEC_BINS)
-/* 5-degree, 2D direct-address index. One small table in RAM and one
- * contiguous binary catalog on SD. Each sky tile is a file segment,
- * not an individual FAT directory entry. */
-static uint32_t tile_offsets[ASTRO_TILE_COUNT+1];
-
-static int read_catalog(int fov_cdeg)
-{
-    char header[20];
-    struct record { uint32_t ra; int32_t dec; uint16_t mag10; uint16_t pad; };
-    struct record recs[128];
-    uint32_t count,version,bytes,index_version,index_count,nra,ndec;
-    int n=0,cosq=cos_dec_q14(hint_dec);
-    int limit_x=fov_cdeg/2+360, limit_y=fov_cdeg/3+360;
-    int32_t ra_hint=(hint_rah*15*10000 + hint_ram*2500);
-    int32_t dec_hint=hint_dec*10000;
-    int tanq=tan_dec_q14(hint_dec);
-
-    FILE *idx=FIO_OpenFile("ML/ASTRO/STARS.IDX",O_RDONLY | O_SYNC);
-    if(!idx)return -2;
-    if(!read_exact(idx,header,20) || memcmp(header,"SIDX",4)) {
-        FIO_CloseFile(idx);return -2;
-    }
-    memcpy(&index_version,header+4,4);
-    memcpy(&index_count,header+8,4);
-    memcpy(&nra,header+12,4);
-    memcpy(&ndec,header+16,4);
-    if(index_version!=2 || nra!=ASTRO_RA_BINS ||
-       ndec!=ASTRO_DEC_BINS || index_count>200000 ||
-       !read_exact(idx,tile_offsets,sizeof(tile_offsets))) {
-        FIO_CloseFile(idx);return -2;
-    }
-    FIO_CloseFile(idx);
-    if(tile_offsets[0] || tile_offsets[ASTRO_TILE_COUNT]!=index_count)
-        return -2;
-    for(int i=1;i<=ASTRO_TILE_COUNT;i++)
-        if(tile_offsets[i]<tile_offsets[i-1] ||
-           tile_offsets[i]>index_count)return -2;
-
-    FILE *f=FIO_OpenFile("ML/ASTRO/STARS.BIN",O_RDONLY | O_SYNC);
-    if(!f)return -1;
-    if(!read_exact(f,header,16) || memcmp(header,CATALOG_MAGIC,4)) {
-        FIO_CloseFile(f);return -1;
-    }
-    memcpy(&version,header+4,4);
-    memcpy(&count,header+8,4);
-    memcpy(&bytes,header+12,4);
-    if(version!=CATALOG_VERSION || bytes!=CATALOG_ENTRY_BYTES ||
-       count!=index_count) {
-        FIO_CloseFile(f);return -1;
-    }
-
-    /* Pointing hint defines a rectangle in the tangent plane.
-     * Conservatively include a 5-degree tile whenever it may overlap.
-     * The margin avoids missing stars at bin boundaries. */
-    int64_t ra_half=(cosq>0) ?
-        ((int64_t)limit_x*100*16384+cosq-1)/cosq+1000 : 1800000;
-    if(ra_half>1800000)ra_half=1800000;
-    int dec_half=limit_y*100+1000;
-    for(int decbin=0;decbin<ASTRO_DEC_BINS;decbin++) {
-        int dec_center=-900000+decbin*50000+25000;
-        int decdelta=dec_center-dec_hint;
-        if(decdelta<0)decdelta=-decdelta;
-        if(decdelta>dec_half+25000)continue;
-        for(int rabin=0;rabin<ASTRO_RA_BINS;rabin++) {
-            int tile=decbin*ASTRO_RA_BINS+rabin;
-            int ra_center=rabin*50000+25000;
-            int delta=ra_center-ra_hint;
-            if(delta<0)delta=-delta;
-            if(delta>1800000)delta=3600000-delta;
-            if((int64_t)delta>ra_half+25000)continue;
-            uint32_t pos=tile_offsets[tile];
-            uint32_t end=tile_offsets[tile+1];
-            if(pos==end)continue;
-            int64_t byteoffset=16+(int64_t)pos*CATALOG_ENTRY_BYTES;
-            if(FIO_SeekSkipFile(f,byteoffset,SEEK_SET)!=byteoffset) {
-                FIO_CloseFile(f);return -1;
-            }
-            while(pos<end) {
-                int take=end-pos<128?end-pos:128;
-                if(!read_exact(f,recs,take*CATALOG_ENTRY_BYTES)) {
-                    FIO_CloseFile(f);return -1;
-                }
-                for(int j=0;j<take;j++) {
-                    int32_t dra=(int32_t)recs[j].ra-ra_hint;
-                    int32_t ddec=recs[j].dec-dec_hint;
-                    if(dra>1800000)dra-=3600000;
-                    if(dra< -1800000)dra+=3600000;
-                    int x=(int)((int64_t)dra*cosq/16384/100);
-                    int y=(int)(ddec/100);
-                    if(x< -limit_x || x>limit_x || y< -limit_y || y>limit_y)
-                        continue;
-                    /* Fix curved RA/Dec grid before matching image geometry.
-                     * Filter the original coordinates so all tile overlap
-                     * and catalog-selection tests remain conservative. */
-                    tangent_project(x,y,tanq,&x,&y);
-                    int mag=recs[j].mag10,k;
-                    if(n==ASTRO_MAX_CATALOG && mag>=nearby[n-1].mag10)
-                        continue;
-                    if(n<ASTRO_MAX_CATALOG)n++;
-                    for(k=n-1;k>0 && nearby[k-1].mag10>mag;k--) {
-                        nearby[k]=nearby[k-1];
-                        nearby_names[k]=nearby_names[k-1];
-                    }
-                    nearby[k].x=x;nearby[k].y=y;nearby[k].mag10=mag;
-                    nearby_names[k]=recs[j].pad;
-                }
-                pos+=take;
-            }
-        }
-    }
-    FIO_CloseFile(f);
-    return n;
-}
-
-/* Read matching names from a small indexed ASCII sidecar file.
- * Max 12 names and a few seeking calls per solve; no heap allocations. */
-static void prepare_annotations(const astro_solution *sol,int nobs,int ncat)
-{
-    n_matched_labels=0;
-    if(!sol || !image || sol->anchor_obs>=nobs || sol->anchor_cat>=ncat)
-        return;
-    FILE *f=FIO_OpenFile("ML/ASTRO/STARS.NAM",O_RDONLY | O_SYNC);
-    if(!f)return;
-    char head[16],label[24];
-    uint32_t version=0,count=0,record_size=0;
-    if(!read_exact(f,head,16) || memcmp(head,"SNAM",4))goto end;
-    memcpy(&version,head+4,4);
-    memcpy(&count,head+8,4);
-    memcpy(&record_size,head+12,4);
-    if(version!=1 || count>65536 || record_size!=24)goto end;
-    uint64_t used=0;
-    for(int o=0;o<nobs && n_matched_labels<ANNOTATION_MAX;o++) {
-        int best=-1,mind=17;
-        for(int k=0;k<ncat;k++) {
-            if(used & (1ULL<<k))continue;
-            int dx=nearby[k].x-nearby[sol->anchor_cat].x;
-            int dy=nearby[k].y-nearby[sol->anchor_cat].y;
-            int px=observed[sol->anchor_obs].x+
-                (int)(((int64_t)sol->a_q12*dx-(int64_t)sol->b_q12*dy)>>12);
-            int py=observed[sol->anchor_obs].y+
-                (int)(((int64_t)sol->b_q12*dx+(int64_t)sol->a_q12*dy)>>12);
-            int ex=px-observed[o].x,ey=py-observed[o].y;
-            int d=ex*ex+ey*ey;
-            if(d<mind){mind=d;best=k;}
-        }
-        if(best<0)continue;
-        used|=1ULL<<best;
-        if(!nearby_names[best] || nearby_names[best]>=count)continue;
-        int64_t offset=16+(int64_t)nearby_names[best]*24;
-        if(FIO_SeekSkipFile(f,offset,SEEK_SET)!=offset)break;
-        if(!read_exact(f,label,24))break;
-        label[23]=0;
-        if(!label[0])continue;
-        struct annotation *a=&matched_labels[n_matched_labels++];
-        a->x=observed[o].x; a->y=observed[o].y;
-        memcpy(a->name,label,24);
-    }
-end:
-    FIO_CloseFile(f);
-}
-
+static void draw_scene_gallery(void);
 static void draw_gallery_results(void)
 {
     if(!gallery_results || !is_pure_play_photo_mode())return;
     /* Canon playback bitmap canvas is 720x480; underlying JPEG is not
-     * modified. Only the verified matches get a caption. */
+     * modified. Overlays come from the verified solution only. */
     BMP_LOCK(
+        draw_scene_gallery();
         bmp_fill(COLOR_BLACK,8,6,345,102);
         bmp_printf(FONT(FONT_MED,COLOR_YELLOW,COLOR_BLACK),16,12,
                    "SKY FOUND (%d stars)",solved_matched_stars);
@@ -356,18 +173,6 @@ static void draw_gallery_results(void)
                    "RA: %s",solve_ra_text);
         bmp_printf(FONT(FONT_MED,COLOR_WHITE,COLOR_BLACK),16,72,
                    "Dec: %s",solve_dec_text);
-        for(int i=0;i<n_matched_labels;i++) {
-            int x=matched_labels[i].x*2; int y=matched_labels[i].y*2;
-            if(x<14||x>690||y<16||y>454)continue;
-            bmp_draw_rect(COLOR_YELLOW,x-5,y-5,10,10);
-            if(i<8) {
-                int tx=x+9;int ty=y+5;
-                if(tx>565)tx=x-126;
-                if(ty>452)ty=y-14;
-                bmp_printf(FONT(FONT_SMALL,COLOR_YELLOW,COLOR_BLACK),
-                           tx,ty,"%s",matched_labels[i].name);
-            }
-        }
         bmp_printf(FONT(FONT_SMALL,COLOR_WHITE,COLOR_BLACK),12,450,
                    "Q: hide  |  LEFT/RIGHT: other photo");
     );
@@ -458,15 +263,34 @@ static int sky_camera_read(void *ctx,uint32_t at,void *dest,uint32_t bytes){
     if(!read_exact(r->file,dest,bytes))return 0;
     r->pos+=bytes;return 1;
 }
+static uint32_t solve_budget_ms=45000;
 static int sky_camera_progress(void *unused,unsigned quads,unsigned checked){
     snprintf(last_status,sizeof(last_status),"Sky patterns %d / checks %d",quads,checked);
-    return !solve_cancel && ((uint32_t)get_ms_clock()-solve_started)<45000;
+    return !solve_cancel && ((uint32_t)get_ms_clock()-solve_started)<solve_budget_ms;
 }
-static int solve_sky_on_camera(int nobs){
+static int sensor_width_x10(void){return is_camera("6D","1.1.6")?358:223;}
+/* Focal-length hint in mm, or 0 for a fully blind solve. */
+static int hint_focal_mm(void){
+    if(focal_source==1)return lens_info.lens_exists?(int)lens_info.focal_len:0;
+    if(focal_source==2)return manual_focal;
+    return 0;
+}
+/* Expected scale (Q16 px per millidegree) for the hint, +-30 %:
+ * IM_W*f/sensor pixels per radian of tangent, times pi/180000. */
+static void focal_window(sky_options *opt){
+    int f=hint_focal_mm();
+    memset(opt,0,sizeof(*opt));
+    if(f<4)return;
+    int64_t s=(int64_t)IM_W*f*65536*31416/((int64_t)sensor_width_x10()*18000*10000);
+    opt->scale_min=(uint32_t)(s*10/13);opt->scale_max=(uint32_t)(s*13/10);
+}
+/* -3: index absent, -2: cancelled, -1: corrupt, 0: no match, 1: solved. */
+static int solve_index(const char *prefix,int nobs,const sky_options *opt){
     uint32_t header[4];FILE *f=0,*pat=0,*fld=0;sky_dir_entry *dir=0;int result=-1;
-    unsigned nkeys=0,npatterns=0,nfields=0;
-    f=FIO_OpenFile("ML/ASTRO/SKY.DIR",O_RDONLY | O_SYNC);
-    if(!f)goto done;
+    unsigned nkeys=0,npatterns=0,nfields=0;char path[32];
+    snprintf(path,sizeof(path),"ML/ASTRO/%s.DIR",prefix);
+    f=FIO_OpenFile(path,O_RDONLY | O_SYNC);
+    if(!f){result=-3;goto done;}
     if(!read_exact(f,header,16) || memcmp(header,"SDIR",4) || header[1]!=1 ||
        !header[2] || header[2]>40000 || header[3]>20000000)goto done;
     nkeys=header[2];npatterns=header[3];
@@ -474,17 +298,19 @@ static int solve_sky_on_camera(int nobs){
     if(!dir){strcpy(last_status,"Not enough RAM for sky directory");goto done;}
     if(!read_exact(f,dir,(nkeys+1)*sizeof(*dir)))goto done;
     FIO_CloseFile(f);f=0;
-    pat=FIO_OpenFile("ML/ASTRO/SKY.PAT",O_RDONLY | O_SYNC);
+    snprintf(path,sizeof(path),"ML/ASTRO/%s.PAT",prefix);
+    pat=FIO_OpenFile(path,O_RDONLY | O_SYNC);
     if(!pat || !read_exact(pat,header,16) || memcmp(header,"SPAT",4) || header[1]!=1 ||
        header[2]!=npatterns || header[3]!=16)goto done;
-    fld=FIO_OpenFile("ML/ASTRO/SKY.FLD",O_RDONLY | O_SYNC);
+    snprintf(path,sizeof(path),"ML/ASTRO/%s.FLD",prefix);
+    fld=FIO_OpenFile(path,O_RDONLY | O_SYNC);
     if(!fld || !read_exact(fld,header,16) || memcmp(header,"SFLD",4) || header[1]!=1 ||
        !header[2] || header[2]>1000000 || header[3]!=SKY_FIELD_BYTES)goto done;
     nfields=header[2];
     struct sky_file_reader pr={pat,16},fr={fld,16};
     result=astro_sky_solve(observed,nobs,IM_W,IM_H,dir,nkeys,npatterns,nfields,
                            sky_camera_read,&pr,sky_camera_read,&fr,
-                           sky_camera_progress,0,&sky_result);
+                           sky_camera_progress,0,opt,&sky_result);
 done:
     if(f)FIO_CloseFile(f);
     if(pat)FIO_CloseFile(pat);
@@ -492,25 +318,92 @@ done:
     if(dir)free(dir);
     return result;
 }
-static void prepare_sky_annotations(int nobs){
-    n_matched_labels=0;
-    FILE *f=FIO_OpenFile("ML/ASTRO/STARS.NAM",O_RDONLY | O_SYNC);
-    if(!f)return;
-    uint32_t head[4];
-    if(!read_exact(f,head,16) || memcmp(head,"SNAM",4) || head[1]!=1 ||
-       head[2]>65536 || head[3]!=24){FIO_CloseFile(f);return;}
-    for(int i=0;i<nobs && n_matched_labels<ANNOTATION_MAX;i++){
-        if(!(sky_result.matched_mask&(1u<<i)))continue;
-        unsigned name=sky_result.names[i];
-        if(!name || name>=head[2])continue;
-        int64_t off=16+(int64_t)name*24;
-        if(FIO_SeekSkipFile(f,off,SEEK_SET)!=off)break;
-        struct annotation *out=&matched_labels[n_matched_labels];
-        if(!read_exact(f,out->name,24))break;
-        out->name[23]=0;out->x=observed[i].x;out->y=observed[i].y;
-        n_matched_labels++;
+static int solve_sky_on_camera(int nobs){
+    sky_options opt;focal_window(&opt);
+    int r=solve_index("SKY",nobs,&opt);
+    if(r==-3)r=-1;
+    /* Optional wide-lens index (make_sky_index.py --wide), only if installed. */
+    if(r==0 && !solve_cancel){
+        int wide=solve_index("SKYW",nobs,&opt);
+        if(wide==1 || wide==-2)r=wide;
     }
-    FIO_CloseFile(f);
+    return r;
+}
+
+/* Overlay data files, opened only while a scene is built or a target looked up. */
+struct overlay_files {struct sky_file_reader r[7];astro_sky_files f;};
+static void open_overlay_files(struct overlay_files *o){
+    static const char *const names[7]={"STARS.BIN","STARS.IDX","STARS.NAM",
+        "DSO.BIN","DSO.KEY","DSO.NAM","CONST.BIN"};
+    memset(o,0,sizeof(*o));
+    astro_file *slots[7]={&o->f.stars,&o->f.stars_idx,&o->f.stars_nam,&o->f.dso,
+                          &o->f.dso_key,&o->f.dso_nam,&o->f.constellations};
+    char path[32];
+    for(int i=0;i<7;i++){
+        snprintf(path,sizeof(path),"ML/ASTRO/%s",names[i]);
+        o->r[i].file=FIO_OpenFile(path,O_RDONLY | O_SYNC);
+        o->r[i].pos=0;
+        if(o->r[i].file){slots[i]->read=sky_camera_read;slots[i]->ctx=&o->r[i];}
+    }
+}
+static void close_overlay_files(struct overlay_files *o){
+    for(int i=0;i<7;i++)if(o->r[i].file)FIO_CloseFile(o->r[i].file);
+}
+/* Resolve the picked designation (SD reads: worker or lookup task only). */
+static void load_target(void){
+    int cat=target_cat,num=target_num;
+    if(target_cat_loaded==cat && target_num_loaded==num)return;
+    struct overlay_files o;open_overlay_files(&o);
+    int r=astro_dso_lookup(&o.f,cat,num,&target);
+    if(r==1){
+        char common[24];
+        astro_dso_common_name(&o.f,&target.obj,common,sizeof(common));
+        int m=target.obj.mag10;
+        if(common[0])snprintf(target_info,sizeof(target_info),"%s",common);
+        else if(m!=ASTRO_MAG_UNKNOWN)
+            snprintf(target_info,sizeof(target_info),"%s, mag %s%d.%d",astro_dso_type_name(target.obj.type),
+                     m<0?"-":"",(m<0?-m:m)/10,(m<0?-m:m)%10);
+        else snprintf(target_info,sizeof(target_info),"%s",astro_dso_type_name(target.obj.type));
+    } else snprintf(target_info,sizeof(target_info),"%s",r==0?"Not in catalogue":"DSO.BIN/KEY missing");
+    close_overlay_files(&o);
+    target_cat_loaded=cat;target_num_loaded=num;
+}
+static void lookup_task(void *unused){load_target();lookup_busy=0;}
+/* Stars, deep-sky outlines, constellations and the target for the solution. */
+static void build_overlay(void){
+    astro_overlay_opts opt={ov_stars,ov_dso,ov_const,45,ov_dso_mag*10};
+    while(lookup_busy)msleep(20);
+    load_target();
+    struct overlay_files o;open_overlay_files(&o);
+    astro_build_scene(&sky_result.wcs,IM_W,IM_H,&opt,(target_on && target.valid)?&target:0,&o.f,&scene);
+    close_overlay_files(&o);
+    scene_valid=1;
+}
+static void format_result(void){
+    uint32_t ts=(sky_result.ra*24+500)/1000;       /* seconds of time */
+    if(ts>=86400)ts-=86400;
+    snprintf(solve_ra_text,sizeof(solve_ra_text),"%02dh%02dm%02ds",(int)(ts/3600),(int)(ts/60%60),(int)(ts%60));
+    int32_t dec=sky_result.dec;
+    uint32_t as=((uint32_t)(dec<0?-dec:dec)*36+50)/100;   /* arcseconds */
+    snprintf(solve_dec_text,sizeof(solve_dec_text),"%c%02dd%02d'%02d\"",dec<0?'-':'+',
+             (int)(as/3600),(int)(as/60%60),(int)(as%60));
+    int fov=sky_result.fov_cdeg,fx10=astro_lens_focal_x10(sensor_width_x10(),fov);
+    snprintf(solve_focal_text,sizeof(solve_focal_text),"%d mm, FOV %d.%d",(fx10+5)/10,fov/100,fov/10%10);
+}
+static void draw_matched_boxes(int num,int den,int ox,int oy){
+    for(int i=0;i<observed_count;i++){
+        if(!(sky_result.matched_mask&(1u<<i)))continue;
+        int x=ox+observed[i].x*num/den,y=oy+observed[i].y*num/den;
+        bmp_draw_rect(COLOR_BLACK,x-6,y-6,12,12);
+        bmp_draw_rect(COLOR_YELLOW,x-5,y-5,10,10);
+    }
+}
+static void target_status(char *out,int size){
+    out[0]=0;
+    if(!scene_valid || !scene.target)return;
+    unsigned sep=scene.target_sep;
+    if(scene.target==1)snprintf(out,size,"%s in view, %d.%d deg from centre",scene.target_label,sep/10000,sep/1000%10);
+    else snprintf(out,size,"%s %d.%d deg away: follow the arrow",scene.target_label,sep/10000,sep/1000%10);
 }
 static void draw_file_preview(void){
     if(!file_preview || !image || gui_menu_shown())return;
@@ -537,52 +430,44 @@ static void draw_file_preview(void){
                 uint8_t *dst=vram+(y+30)*BMPPITCH+60;
                 for(int x=0;x<600;x++)dst[x]=lut[row[x*3/5]];
             }
+            if(scene_valid){
+                astro_map m={5,3,60,30,60,30,659,429};
+                astro_draw_scene(&scene,&m,0);
+            }
+            draw_matched_boxes(5,3,60,30);
+            char status[64];target_status(status,sizeof(status));
             bmp_printf(FONT(FONT_MED,COLOR_YELLOW,COLOR_BLACK),12,2,"MIDNIGHT: SKY FOUND   %d stars",solved_matched_stars);
-            int boxes[8][4],nb=0;
-            for(int i=0;i<n_matched_labels;i++){
-                int x=60+matched_labels[i].x*5/3,y=30+matched_labels[i].y*5/3;
-                bmp_draw_rect(COLOR_BLACK,x-6,y-6,12,12);
-                bmp_draw_rect(COLOR_YELLOW,x-5,y-5,10,10);
-            }
-            for(int i=0;i<n_matched_labels;i++){
-                int x=60+matched_labels[i].x*5/3,y=30+matched_labels[i].y*5/3;
-                if(nb>=8)continue;
-                int width=strlen(matched_labels[i].name)*10+4;
-                int tx=0,ty=0,placed=0;
-                for(int choice=0;choice<4;choice++){
-                    tx=(choice&1)?x-width-8:x+9;
-                    ty=(choice&2)?y-20:y+5;
-                    if(tx<3 || tx+width>717 || ty<31 || ty+16>429)continue;
-                    int overlap=0;
-                    /* A later star box must not overwrite an earlier name. */
-                    for(int j=0;j<n_matched_labels;j++){
-                        int mx=60+matched_labels[j].x*5/3,my=30+matched_labels[j].y*5/3;
-                        if(tx<mx+7 && tx+width>mx-7 && ty<my+7 && ty+16>my-7){overlap=1;break;}
-                    }
-                    for(int j=0;j<nb;j++)if(tx<boxes[j][2]+4 && tx+width>boxes[j][0]-4 &&
-                        ty<boxes[j][3]+3 && ty+16>boxes[j][1]-3){overlap=1;break;}
-                    if(!overlap){placed=1;break;}
-                }
-                if(placed){
-                    bmp_printf(FONT(FONT_SMALL,COLOR_YELLOW,COLOR_BLACK),tx,ty,"%s",matched_labels[i].name);
-                    boxes[nb][0]=tx;boxes[nb][1]=ty;boxes[nb][2]=tx+width;boxes[nb][3]=ty+16;nb++;
-                }
-            }
-            bmp_printf(FONT(FONT_MED,COLOR_WHITE,COLOR_BLACK),12,432,"RA %s   Dec %s",solve_ra_text,solve_dec_text);
-            bmp_printf(FONT(FONT_SMALL,COLOR_WHITE,COLOR_BLACK),12,461,"Blind solve  %d.%02d s   %d patterns   Q: back",solve_elapsed/1000,(solve_elapsed%1000)/10,sky_result.quads);
+            bmp_printf(FONT(FONT_MED,COLOR_WHITE,COLOR_BLACK),12,432,"RA %s  Dec %s",solve_ra_text,solve_dec_text);
+            if(status[0])bmp_printf(FONT(FONT_SMALL,COLOR_RED,COLOR_BLACK),430,438,"%s",status);
+            bmp_printf(FONT(FONT_SMALL,COLOR_WHITE,COLOR_BLACK),12,461,"%s %d.%02d s  lens ~%s  Q: back",
+                       hint_focal_mm()?"Hinted":"Blind",solve_elapsed/1000,(solve_elapsed%1000)/10,solve_focal_text);
         }
     }));
+}
+static void draw_scene_gallery(void){
+    if(scene_valid){
+        astro_map m={2,1,0,0,0,0,719,445};
+        astro_draw_scene(&scene,&m,0);
+    }
+    draw_matched_boxes(2,1,0,0);
+}
+/* Capture, detect and solve one frame. Returns the solver status. */
+static int solve_frame(int test_mode){
+    if(!(test_mode?capture_test_pgm():capture_liveview()))return -4;
+    strcpy(last_status,"Detecting stars...");
+    astro_mask_streak(image,IM_W,IM_H,IM_W);
+    int n=astro_find_stars_psf(image,IM_W,IM_H,IM_W,observed,ASTRO_MAX_STARS);
+    observed_count=n;
+    if(n<8){snprintf(last_status,sizeof(last_status),"%d stars; need at least 8",n);return -5;}
+    return solve_sky_on_camera(n);
 }
 static void do_solve(int action){
     int test_mode=(action==3),gallery_mode=(action==5);
     solve_started=(uint32_t)get_ms_clock();solve_cancel=0;
     memset(&sky_result,0,sizeof(sky_result));
+    scene_valid=0;
     if(!test_mode && !gallery_mode && lv_dispsize!=1){strcpy(last_status,"Use 1x LiveView");return;}
     if(gallery_mode)gallery_image_sig=gallery_photo_signature();
-    if(!(test_mode?capture_test_pgm():capture_liveview())){
-        if(!test_mode)strcpy(last_status,"No preview image");
-        return;
-    }
     /* Preserve the exact captured Live View frame. Detection masks trails
      * in-place, but the displayed result must show the original pixels,
      * not a later frame or the filtered working image. */
@@ -590,11 +475,17 @@ static void do_solve(int action){
     if(action==2){
         snapshot=malloc(IM_W*IM_H);
         if(!snapshot){strcpy(last_status,"Out of RAM for result preview");return;}
-        memcpy(snapshot,image,IM_W*IM_H);
     }
+    if(!(test_mode?capture_test_pgm():capture_liveview())){
+        if(!test_mode)strcpy(last_status,"No preview image");
+        if(snapshot)free(snapshot);
+        return;
+    }
+    if(snapshot)memcpy(snapshot,image,IM_W*IM_H);
     strcpy(last_status,"Detecting stars...");
     int masked=astro_mask_streak(image,IM_W,IM_H,IM_W);
     int n=astro_find_stars_psf(image,IM_W,IM_H,IM_W,observed,ASTRO_MAX_STARS);
+    observed_count=n;
     if(n<8){
         if(snapshot)free(snapshot);
         snprintf(last_status,sizeof(last_status),"%d stars; need at least 8",n);
@@ -606,14 +497,11 @@ static void do_solve(int action){
     DryosDebugMsg(0,15,"ASTRO ra=%d dec=%d quads=%d reads=%d checks=%d",sky_result.ra,sky_result.dec,sky_result.quads,sky_result.reads,sky_result.checked);
     if(status!=1){
         if(snapshot)free(snapshot);
-        strcpy(last_status,status==-2?"Solve cancelled / 45s limit":status<0?"Missing/corrupt SKY index":"No verified sky match");return;
+        strcpy(last_status,status==-2?"Solve cancelled / time limit":status<0?"Missing/corrupt SKY index":"No verified sky match");return;
     }
-    uint32_t ra=(sky_result.ra+50)/100;
-    int32_t dec=sky_result.dec;unsigned ad=(unsigned)(dec<0?-dec:dec);ad=(ad+50)/100;
-    snprintf(solve_ra_text,sizeof(solve_ra_text),"%d.%02d deg",ra/100,ra%100);
-    snprintf(solve_dec_text,sizeof(solve_dec_text),"%s%d.%02d deg",dec<0?"-":"+",ad/100,ad%100);
+    format_result();
     solved_matched_stars=sky_result.matched;
-    prepare_sky_annotations(n);
+    build_overlay();
     snprintf(last_status,sizeof(last_status),"Solved %d stars in %d.%02ds",sky_result.matched,solve_elapsed/1000,(solve_elapsed%1000)/10);
     if(gallery_mode){result_from_gallery=1;gallery_result_pending=1;}
     if(snapshot){
@@ -626,6 +514,56 @@ static void do_solve(int action){
          * the preview even though the solver excluded it internally. */
         if(capture_test_pgm())file_preview=1;
     }
+}
+/* Live guide: re-solve Live View continuously and keep an arrow (or the
+ * outline) of the target on screen until Q, a menu or playback. The 3:2
+ * Live View image fills the 720x480 overlay on the 600D and 6D. */
+static void guide_hud(const char *text,int color){
+    BMP_LOCK(
+        bmp_fill(COLOR_BLACK,0,446,720,30);
+        bmp_printf(FONT(FONT_MED,color,COLOR_BLACK),10,449,"%s",text);
+    );
+}
+static void do_guide(void){
+    astro_map m={2,1,0,0,0,0,719,445};
+    int drawn=0,frames=0,solved=0;
+    char text[64];
+    solve_cancel=0;
+    if(lv_dispsize!=1){strcpy(last_status,"Use 1x LiveView");return;}
+    while(lookup_busy)msleep(20);
+    load_target();
+    if(!target.valid){strcpy(last_status,"Pick a target first");return;}
+    for(int i=0;i<30 && gui_menu_shown();i++)msleep(50);   /* menu closing */
+    guide_hud("Guide: hold still...   Q: stop",COLOR_WHITE);
+    solve_budget_ms=hint_focal_mm()?8000:20000;
+    while(!solve_cancel && lv && !is_movie_mode() && !gui_menu_shown() && !is_play_or_qr_mode()){
+        solve_started=(uint32_t)get_ms_clock();
+        memset(&sky_result,0,sizeof(sky_result));
+        int status=solve_frame(0);
+        frames++;
+        if(solve_cancel || !lv || gui_menu_shown())break;
+        if(status==1){
+            solved++;
+            build_overlay();
+            BMP_LOCK(
+                if(drawn)astro_draw_scene(&shown_scene,&m,1);
+                astro_draw_scene(&scene,&m,0);
+            );
+            shown_scene=scene;drawn=1;
+            target_status(text,sizeof(text));
+            strcat(text,"   Q: stop");
+            guide_hud(text,scene.target==1?COLOR_GREEN1:COLOR_YELLOW);
+        } else {
+            snprintf(text,sizeof(text),"%s: hold still / raise LV gain   Q: stop",
+                     status==-5?"Too few stars":"No sky match");
+            guide_hud(text,COLOR_WHITE);
+        }
+        msleep(200);
+    }
+    if(drawn)BMP_LOCK(astro_draw_scene(&shown_scene,&m,1););
+    BMP_LOCK(bmp_fill(COLOR_EMPTY,0,446,720,30););
+    solve_budget_ms=45000;
+    snprintf(last_status,sizeof(last_status),"Guide stopped: %d/%d frames solved",solved,frames);
 }
 static void do_measure(void)
 {
@@ -701,6 +639,7 @@ static void astro_worker(void *ignored)
         strcpy(last_status,"Out of RAM (86 KB needed)");
     } else if(action==1)do_focus();
     else if(action==4)do_measure();
+    else if(action==6)do_guide();
     else if(action==2 || action==3 || action==5) {
         if(action==2) {
             /* 3-second vibration settling before reading LIVEVIEW pixels.
@@ -752,13 +691,13 @@ static void start_action(int action)
     requested_action=action;
     /* Make progress visible immediately when Solve is started in playback. */
     gallery_running=(action==5);
-    if(action==2 || action==3 || action==5) {
+    if(action==2 || action==3 || action==5 || action==6) {
         solve_ra_text[0]=0;
         solve_dec_text[0]=0;
         result_from_gallery=0;
         gallery_results=0;
         gallery_result_pending=0;
-        n_matched_labels=0;
+        scene_valid=0;
     }
     strcpy(last_status,"Running...");
     if(!task_create("astro_task",0x1d,0x4000,astro_worker,0)) {
@@ -789,6 +728,7 @@ static MENU_SELECT_FUNC(start_focus) { start_action(1); }
 static MENU_SELECT_FUNC(start_solve) { start_action(2); }
 static MENU_SELECT_FUNC(start_test) { start_action(3); }
 static MENU_SELECT_FUNC(start_measure) { start_action(4); }
+static MENU_SELECT_FUNC(start_guide) { gui_stop_menu(); start_action(6); }
 
 /* Mirror the EXISTING photo-only ML gain. Never use the mode-dependent
  * set_display_gain_equiv(): in movie mode that changes recorded digital ISO.
@@ -852,12 +792,56 @@ static MENU_UPDATE_FUNC(astro_status)
 static MENU_UPDATE_FUNC(astro_ra_result)
 {
     MENU_SET_VALUE("%s",solve_ra_text[0]?solve_ra_text:"--");
-    MENU_SET_HELP("Right ascension (sky longitude), in decimal degrees.");
+    MENU_SET_HELP("Right ascension of the frame centre (J2000), hours/minutes/seconds.");
 }
 static MENU_UPDATE_FUNC(astro_dec_result)
 {
     MENU_SET_VALUE("%s",solve_dec_text[0]?solve_dec_text:"--");
-    MENU_SET_HELP("Declination (sky latitude), in decimal degrees.");
+    MENU_SET_HELP("Declination of the frame centre (J2000), degrees/arcminutes/arcseconds.");
+}
+static MENU_UPDATE_FUNC(astro_focal_result)
+{
+    MENU_SET_VALUE("%s",solve_focal_text[0]?solve_focal_text:"--");
+    MENU_SET_HELP("Focal length measured from the solved field. Use it for manual lenses.");
+}
+/* Caret editing (as in the intervalometer) needs .unit=UNIT_DEC and no
+ * .select. The digit count follows the selected catalogue's range. */
+static MENU_UPDATE_FUNC(target_number_update)
+{
+    int cat=(target_cat>=1 && target_cat<=ASTRO_CAT_COUNT)?target_cat:ASTRO_CAT_M;
+    entry->max=astro_catalogue_max[cat];
+    if(target_num>entry->max)target_num=entry->max;
+    if(target_num<1)target_num=1;
+    char name[24];astro_designation(cat,target_num,name,sizeof(name));
+    MENU_SET_RINFO("%s",name);
+}
+static MENU_UPDATE_FUNC(target_object_update)
+{
+    if(target_cat_loaded!=target_cat || target_num_loaded!=target_num){
+        if(!lookup_busy && !busy){
+            lookup_busy=1;
+            if(!task_create("astro_lookup",0x1e,0x2000,lookup_task,0))lookup_busy=0;
+        }
+        MENU_SET_VALUE("...");
+    } else MENU_SET_VALUE("%s",target_info);
+    if(target.valid && target_cat_loaded==target_cat && target_num_loaded==target_num){
+        int maj=target.obj.maj;
+        MENU_SET_RINFO("%d'",(maj+5)/10);
+    }
+}
+static MENU_UPDATE_FUNC(focal_source_update)
+{
+    if(focal_source==1){
+        if(lens_info.lens_exists && lens_info.focal_len)MENU_SET_RINFO("%dmm",lens_info.focal_len);
+        else MENU_SET_WARNING(MENU_WARN_NOT_WORKING,"Lens reports no focal length: use Manual.");
+    } else if(focal_source==2)MENU_SET_RINFO("%dmm",manual_focal);
+}
+static MENU_UPDATE_FUNC(manual_focal_update)
+{
+    int fov=astro_lens_fov_cdeg(sensor_width_x10(),manual_focal);
+    MENU_SET_RINFO("FOV %d.%d",fov/100,fov/10%10);
+    if(focal_source!=2)MENU_SET_WARNING(MENU_WARN_ADVICE,"Used only when Focal length source is Manual.");
+    else if(fov>6000)MENU_SET_WARNING(MENU_WARN_ADVICE,"Over 60 deg: install the optional SKYW wide index.");
 }
 static unsigned int astro_keypress(unsigned int key)
 {
@@ -867,7 +851,8 @@ static unsigned int astro_keypress(unsigned int key)
         }
         return 1;
     }
-    if(busy && (requested_action==2 || requested_action==3 || requested_action==5) && key==MODULE_KEY_Q){solve_cancel=1;return 0;}
+    if(busy && (requested_action==2 || requested_action==3 || requested_action==5 || requested_action==6) &&
+       key==MODULE_KEY_Q){solve_cancel=1;return 0;}
     /* Photo gallery: Q opens a confirmation, SET runs the solver on
      * the full-screen playback YUV preview. No file rewriting, no motor.
      * Esc/navigation restores Canon key behavior. */
@@ -966,6 +951,33 @@ static struct menu_entry astro_menu[] = {
             { .name="Solve LiveView (3s)", .select=start_solve,
               .help="Wait 3 seconds, solve without hints and open the annotated frame.",
               .icon_type=IT_ACTION },
+            { .name="Target & guide", .select=menu_open_submenu,
+              .help="Pick an M/NGC/IC/C/B/Sh2 object; LiveView arrows lead you to it.",
+              .children=(struct menu_entry[]) {
+                { .name="Catalogue", .priv=&target_cat, .min=1, .max=ASTRO_CAT_COUNT,
+                  .choices=CHOICES("Messier (M)","NGC","IC","Caldwell (C)","Barnard (B)","Sharpless (Sh2)"),
+                  .help="Catalogue of the target object." },
+                { .name="Number", .priv=&target_num, .min=1, .max=110, .unit=UNIT_DEC,
+                  .update=target_number_update,
+                  .help="Edit like the intervalometer time: LEFT/RIGHT digit, UP/DOWN value.",
+                  .help2="Digits follow the catalogue: M 1-110, NGC 1-7840, IC 1-5386." },
+                { .name="Object", .update=target_object_update, .icon_type=IT_ACTION,
+                  .help="Catalogue entry for this number, from ML/ASTRO/DSO.BIN." },
+                { .name="Guide in LiveView", .select=start_guide, .icon_type=IT_ACTION,
+                  .help="1x photo LiveView: solves repeatedly and points to the target. Q stops.",
+                  .help2="Set the lens focal length under Midnight advanced for faster updates." },
+                { .name="Mark target", .priv=&target_on, .max=1,
+                  .help="Show the target, or an arrow to it, on every solved frame." },
+                { .name="Star names", .priv=&ov_stars, .max=1,
+                  .help="Label stars up to magnitude 4.5 (Greek Bayer letters)." },
+                { .name="Deep-sky outlines", .priv=&ov_dso, .max=1,
+                  .help="Ellipses for M, C, bright NGC/IC, and large Barnard/Sharpless objects." },
+                { .name="Constellations", .priv=&ov_const, .max=1,
+                  .help="Constellation figures and names." },
+                { .name="DSO magnitude limit", .priv=&ov_dso_mag, .min=6, .max=14,
+                  .help="NGC/IC objects brighter than this are outlined. M and C always are." },
+                MENU_EOL
+              } },
             { .name="Midnight advanced", .select=menu_open_submenu,
               .help="Focus tuning, last coordinates and developer-only file tests.",
               .children=(struct menu_entry[]) {
@@ -984,12 +996,27 @@ static struct menu_entry astro_menu[] = {
                       .help="600D DISP / 6D LCD-light in photo LV. Choose Off to keep the Canon button." },
                     MENU_EOL
                   } },
+                { .name="Lens focal length", .select=menu_open_submenu,
+                  .help="Optional solving hint. Blind solving needs no lens data.",
+                  .children=(struct menu_entry[]) {
+                    { .name="Focal length source",.priv=&focal_source,.max=2,
+                      .choices=CHOICES("None (blind)","From lens","Manual"),
+                      .update=focal_source_update,
+                      .help="A hint restricts the image scale: much less work per solve.",
+                      .help2="Manual: for lenses without electronic contacts." },
+                    { .name="Manual focal length",.priv=&manual_focal,.min=4,.max=1200,.unit=UNIT_DEC,
+                      .update=manual_focal_update,
+                      .help="Millimetres. LEFT/RIGHT: digit, UP/DOWN: value.",
+                      .help2="Last solve shows the measured focal length for comparison." },
+                    MENU_EOL
+                  } },
                 { .name="Last solve", .select=menu_open_submenu,
                   .help="Read-only result of the last solve. No pointing coordinates are required.",
                   .children=(struct menu_entry[]) {
                     { .name="Last result",.update=astro_status,.icon_type=IT_ACTION },
-                    { .name="RA (deg)",.update=astro_ra_result,.icon_type=IT_ACTION },
-                    { .name="Dec (deg)",.update=astro_dec_result,.icon_type=IT_ACTION },
+                    { .name="RA",.update=astro_ra_result,.icon_type=IT_ACTION },
+                    { .name="Dec",.update=astro_dec_result,.icon_type=IT_ACTION },
+                    { .name="Measured lens",.update=astro_focal_result,.icon_type=IT_ACTION },
                     MENU_EOL
                   } },
                 { .name="Developer tests", .select=menu_open_submenu,

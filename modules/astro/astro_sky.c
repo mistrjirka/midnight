@@ -8,6 +8,7 @@
  * quad never displaces a true match, and a verified solution exits early. */
 typedef struct {uint32_t key,fine,field;uint8_t a,b,flip,pad;} sky_pattern;
 typedef struct {int16_t x,y;uint16_t name,mag;} field_star;
+/* pad: millidegrees per coordinate unit for wide fields (0 means 1). */
 typedef struct {uint32_t ra;int32_t dec;uint16_t count,radius;uint32_t pad;
                 field_star stars[SKY_VERIFY_STARS];} sky_field;
 typedef char assert_pattern[(sizeof(sky_pattern)==16)?1:-1];
@@ -25,6 +26,7 @@ static uint32_t cached_field=0xffffffffu;
 static int16_t pixel_x[SKY_VERIFY_STARS],pixel_y[SKY_VERIFY_STARS];
 static int8_t association[ASTRO_MAX_STARS];
 static int32_t matrix[4],translate[2];
+static uint32_t scale_min=SKY_SCALE_MIN,scale_max=SKY_SCALE_MAX;
 static uint32_t canonical(int *x,int *y,uint32_t *fin,int *role_a,int *role_b,int *parity) {
     int longest=-1,a=0,b=1;
     for(int i=0;i<4;i++)for(int j=i+1;j<4;j++) {
@@ -88,54 +90,109 @@ static uint32_t canonical(int *x,int *y,uint32_t *fin,int *role_a,int *role_b,in
     return best;
 }
 static int popcount32(uint32_t x){int n=0;while(x){x&=x-1;n++;}return n;}
-static uint32_t isqrt64(uint64_t x){
-    uint64_t result=0,bit=1ULL<<62;
-    while(bit>x)bit>>=2;
-    while(bit){if(x>=result+bit){x-=result+bit;result=(result>>1)+bit;}else result>>=1;bit>>=2;}
-    return (uint32_t)result;
+/* 1000*log10(k!) and 1000*log10(1+i/16): integer log-odds arithmetic. */
+static const uint16_t log10_fact[ASTRO_MAX_STARS+1]={0,0,301,778,1380,2079,2857,
+    3702,4606,5560,6560,7601,8680,9794,10940,12116,13321,14551,15806,17085,
+    18386,19708,21051,22412,23793,25191,26606,28037,29484,30947,32424,33915,35420};
+static const uint16_t log10_frac[16]={0,26,51,75,97,118,138,158,176,194,211,227,243,258,273,287};
+static int log10_milli(uint32_t x){
+    int e=0;
+    if(!x)return -100000;
+    while(x>=32){x>>=1;e++;}
+    while(x<16){x<<=1;e--;}
+    return 1204+e*301+log10_frac[x-16];
 }
-/* CORDIC: accurate sky coordinates without a software floating-point
- * dependency. It runs once, after a solution has already been verified. */
-static const int32_t angles[]={536870912,316933406,167458907,85004756,
-    42667331,21354465,10679838,5340245,2670163,1335087,667544,333772,
-    166886,83443,41722,20861,10430,5215,2608,1304,652,326,163,81};
-static void sincos_dec(int32_t degrees,int32_t *s,int32_t *c){
-    int64_t x=652032874,y=0,z=((int64_t)degrees*4294967296LL)/3600000;
-    for(int i=0;i<24;i++){
-        int64_t ox=x;
-        if(z>=0){x-=y>>i;y+=ox>>i;z-=angles[i];}
-        else {x+=y>>i;y-=ox>>i;z+=angles[i];}
+/* Four quad stars match by construction, so only the remaining stars are
+ * independent evidence. Upper bound for the chance of k such coincidences:
+ * C(n,k)*p^k, with p = (catalogue stars in frame)*(21 integer offsets within
+ * the final 6 px^2 radius)/(frame area). Multiply by the number of
+ * hypotheses checked so far and demand < 1e-6 (log-odds, Bonferroni). */
+#define SKY_FALSE_ALARM_LOG10 (-6000)
+static int significant(int n,int k,int w,int h,unsigned hypotheses){
+    int inside=0;
+    for(unsigned i=0;i<field_buf.count;i++)if(pixel_x[i]!=-30000)inside++;
+    if(k<4 || n<k || n>ASTRO_MAX_STARS || !inside)return 0;
+    int log_p=log10_milli((uint32_t)inside*21)-log10_milli((uint32_t)(w+20)*(h+20));
+    int log_false=log10_fact[n]-log10_fact[k]-log10_fact[n-k]+k*log_p+
+                  log10_milli(hypotheses?hypotheses:1);
+    return log_false<=SKY_FALSE_ALARM_LOG10;
+}
+static int32_t star_x16[SKY_VERIFY_STARS],star_y16[SKY_VERIFY_STARS];
+static int8_t star_ok[SKY_VERIFY_STARS];
+/* Similarity fit (with the solution's mirror parity) from tangent-plane
+ * millidegrees about the image centre to pixels. Same normal equations as
+ * refine(), Q24 output for wide-lens precision. */
+static int fit_wcs(const astro_star *obs,int n,int parity,astro_wcs *wcs){
+    int64_t sx=0,sy=0,su=0,sv=0,ss=0,sa=0,sb=0;int used=0;
+    for(int i=0;i<n;i++){
+        int k=association[i];
+        if(k<0 || !star_ok[k])continue;
+        int64_t x=star_x16[k]/16,y=parity*(star_y16[k]/16),u=obs[i].x,v=obs[i].y;
+        sx+=x;sy+=y;su+=u;sv+=v;ss+=x*x+y*y;sa+=x*u+y*v;sb+=x*v-y*u;used++;
     }
-    *s=(int32_t)y;*c=(int32_t)x;
+    int64_t den=used*ss-sx*sx-sy*sy;
+    if(used<4 || den<100)return 0;
+    int64_t a=(used*sa-sx*su-sy*sv)*16777216/den;
+    int64_t b=(used*sb-sx*sv+sy*su)*16777216/den;
+    if(!a && !b)return 0;
+    wcs->m[0]=(int32_t)a;wcs->m[1]=(int32_t)(-b*parity);
+    wcs->m[2]=(int32_t)b;wcs->m[3]=(int32_t)(a*parity);
+    wcs->t[0]=(int32_t)((su*65536-(a*sx-b*sy)/256)/used);
+    wcs->t[1]=(int32_t)((sv*65536-(b*sx+a*sy)/256)/used);
+    return 1;
 }
-static int32_t atan_degrees(int64_t y,int64_t x){
-    int64_t z=0;
-    if(x<0){z=y>=0?2147483648LL:-2147483648LL;x=-x;y=-y;}
-    for(int i=0;i<24;i++){
-        int64_t ox=x;
-        if(y>0){x+=y>>i;y-=ox>>i;z+=angles[i];}
-        else {x-=y>>i;y+=ox>>i;z-=angles[i];}
+/* Runs once, after a solution has already been verified. The solver's
+ * transform is anchored at the index field's tangent point, which can be
+ * far from the image centre on wide lenses. Re-express every field star
+ * about the image centre, refit, then re-associate once with the better
+ * model. Acceptance is already decided; this only improves geometry. */
+static void export_solution(const astro_star *obs,int n,int w,int h,int parity,sky_solution *out){
+    astro_wcs field={field_buf.ra,field_buf.dec,{0,0,0,0},{0,0}},ident,*wcs=&out->wcs;
+    int32_t unit=field_buf.pad?(int32_t)field_buf.pad:1;
+    for(int i=0;i<4;i++)field.m[i]=matrix[i]*256/unit;
+    field.t[0]=translate[0];field.t[1]=translate[1];
+    *wcs=field;
+    if(!astro_wcs_unproject(&field,w*8,h*8,&out->ra,&out->dec)){out->ra=field_buf.ra;out->dec=field_buf.dec;}
+    /* Identity maps: "pixels" are tangent millidegrees. */
+    ident.ra0=field_buf.ra;ident.dec0=field_buf.dec;
+    ident.m[0]=ident.m[3]=16777216;ident.m[1]=ident.m[2]=0;ident.t[0]=ident.t[1]=0;
+    astro_wcs centre=ident;centre.ra0=out->ra;centre.dec0=out->dec;
+    for(unsigned k=0;k<field_buf.count;k++){
+        uint32_t ra;int32_t dec;
+        star_ok[k]=astro_wcs_unproject(&ident,field_buf.stars[k].x*unit*16,field_buf.stars[k].y*unit*16,&ra,&dec) &&
+                   astro_wcs_project(&centre,ra,dec,&star_x16[k],&star_y16[k]);
     }
-    return (int32_t)((z*3600000)/4294967296LL);
-}
-static void center_coordinates(int w,int h,sky_solution *out){
-    int64_t u=(int64_t)(w/2)*65536-translate[0];
-    int64_t v=(int64_t)(h/2)*65536-translate[1];
-    int64_t d=(int64_t)matrix[0]*matrix[3]-(int64_t)matrix[1]*matrix[2];
-    int64_t xm=((int64_t)matrix[3]*u-(int64_t)matrix[1]*v)/d;
-    int64_t ym=((int64_t)matrix[0]*v-(int64_t)matrix[2]*u)/d;
-    /* Millidegrees tangent coordinates -> Q30 radians. */
-    int64_t xx=xm*18740330/1000,yy=ym*18740330/1000;
-    int32_t sd,cd;sincos_dec(field_buf.dec,&sd,&cd);
-    int64_t horizontal=cd-((yy*sd)>>30),vertical=sd+((yy*cd)>>30);
-    int64_t rho=isqrt64((uint64_t)(horizontal*horizontal+xx*xx));
-    int32_t dra=atan_degrees(xx,horizontal);
-    int64_t ra=(int64_t)field_buf.ra+dra;
-    if(ra<0)ra+=3600000;
-    if(ra>=3600000)ra-=3600000;
-    out->ra=(uint32_t)ra;out->dec=atan_degrees(vertical,rho);
-    uint32_t scale=isqrt64((int64_t)matrix[0]*matrix[0]+(int64_t)matrix[2]*matrix[2]);
-    out->fov_cdeg=scale?(int)((int64_t)w*65536/(10*scale)):0;
+    astro_wcs refit={out->ra,out->dec,{0,0,0,0},{0,0}};
+    if(fit_wcs(obs,n,parity,&refit)){
+        *wcs=refit;
+        /* One re-association pass across the whole frame. */
+        int8_t previous[ASTRO_MAX_STARS];
+        memcpy(previous,association,sizeof(previous));
+        uint32_t used[3]={0,0,0};int matches=0,err=0;uint32_t mask=0;
+        for(int o=0;o<n;o++){
+            int best=-1,dist=7;
+            for(unsigned k=0;k<field_buf.count;k++){
+                int32_t x16,y16;
+                if(!star_ok[k] || (used[k>>5]&(1u<<(k&31))))continue;
+                int64_t px=(int64_t)refit.m[0]*star_x16[k]+(int64_t)refit.m[1]*star_y16[k]+(int64_t)refit.t[0]*4096;
+                int64_t py=(int64_t)refit.m[2]*star_x16[k]+(int64_t)refit.m[3]*star_y16[k]+(int64_t)refit.t[1]*4096;
+                x16=(int32_t)((px+(1<<23))>>24);y16=(int32_t)((py+(1<<23))>>24);
+                int dx=(x16-obs[o].x*16+8)>>4,dy=(y16-obs[o].y*16+8)>>4;
+                if(ABS(dx)>3 || ABS(dy)>3)continue;
+                int e=dx*dx+dy*dy;
+                if(e<dist){best=(int)k;dist=e;}
+            }
+            association[o]=(int8_t)best;
+            if(best>=0){used[best>>5]|=1u<<(best&31);err+=dist;matches++;mask|=1u<<o;}
+        }
+        astro_wcs again=refit;
+        if(matches>=out->matched && fit_wcs(obs,n,parity,&again)){
+            *wcs=again;out->matched=matches;out->matched_mask=mask;
+            out->mse100=matches?100*err/matches:0;
+        } else memcpy(association,previous,sizeof(previous));
+        astro_wcs_unproject(wcs,w*8,h*8,&out->ra,&out->dec);
+    }
+    out->fov_cdeg=astro_wcs_fov_cdeg(wcs,w,h);
 }
 static int associate(const astro_star *obs,int n,int w,int h,int tolerance,int *error,uint32_t *mask){
     unsigned nc=field_buf.count;
@@ -191,8 +248,8 @@ static int verify_pattern(const sky_pattern *r,const astro_star *obs,int n,int w
         cached_field=r->field;
     }
     if(field_buf.count<10 || field_buf.count>SKY_VERIFY_STARS ||
-       field_buf.ra>=3600000 || field_buf.dec< -900000 || field_buf.dec>900000)return -1;
-    out->checked++;
+       field_buf.ra>=3600000 || field_buf.dec< -900000 || field_buf.dec>900000 ||
+       field_buf.pad>8)return -1;
     field_star *a=&field_buf.stars[r->a],*b=&field_buf.stars[r->b];
     int dxs=b->x-a->x,dys=b->y-a->y,dxo=obs[ob].x-obs[oa].x,dyo=obs[ob].y-obs[oa].y;
     int parity=flip==r->flip?1:-1;
@@ -202,8 +259,10 @@ static int verify_pattern(const sky_pattern *r,const astro_star *obs,int n,int w
     matrix[1]=(int32_t)(((int64_t)dxo*dys-(int64_t)parity*dyo*dxs)*65536/den);
     matrix[2]=(int32_t)(((int64_t)dyo*dxs-(int64_t)parity*dxo*dys)*65536/den);
     matrix[3]=(int32_t)(((int64_t)dyo*dys+(int64_t)parity*dxo*dxs)*65536/den);
-    uint32_t scale=isqrt64((int64_t)matrix[0]*matrix[0]+(int64_t)matrix[2]*matrix[2]);
-    if(scale<500 || scale>30000)return 0;
+    uint32_t scale=astro_isqrt64((int64_t)matrix[0]*matrix[0]+(int64_t)matrix[2]*matrix[2]);
+    uint32_t unit=field_buf.pad?field_buf.pad:1;
+    if(scale<scale_min*unit || scale>scale_max*unit)return 0;
+    out->checked++; /* hypotheses actually tested: the Bonferroni factor */
     translate[0]=obs[oa].x*65536-matrix[0]*a->x-matrix[1]*a->y;
     translate[1]=obs[oa].y*65536-matrix[2]*a->x-matrix[3]*a->y;
     int err=0;uint32_t mask=0;
@@ -215,11 +274,12 @@ static int verify_pattern(const sky_pattern *r,const astro_star *obs,int n,int w
     if(!refine(obs,n,parity))return 0;
     matches=associate(obs,n,w,h,6,&err,&mask);
     if(matches<8 || popcount32(mask&~quad_mask)<4 || err>2*matches)return 0;
+    if(!significant(n-popcount32(quad_mask),popcount32(mask&~quad_mask),w,h,out->checked))return 0;
     out->matched=matches;out->mse100=100*err/matches;out->matched_mask=mask;
     out->field=r->field;
+    export_solution(obs,n,w,h,parity,out);
     memset(out->names,0,sizeof(out->names));
     for(int i=0;i<n;i++)if(association[i]>=0)out->names[i]=field_buf.stars[(unsigned)association[i]].name;
-    center_coordinates(w,h,out);
     return 1;
 }
 static int verify_candidates(const astro_star *obs,int n,int w,int h,
@@ -246,10 +306,16 @@ int astro_sky_solve(const astro_star *obs,int n,int w,int h,
                     const sky_dir_entry *dir,unsigned nkeys,unsigned npatterns,
                     unsigned nfields,sky_read read_patterns,void *pattern_ctx,
                     sky_read read_fields,void *field_ctx,sky_progress progress,void *progress_ctx,
-                    sky_solution *out){
+                    const sky_options *opt,sky_solution *out){
     if(!obs || !dir || !out || !read_patterns || !read_fields || n<8 || n>32 ||
        w<100 || w>4096 || h<80 || h>2160 || nkeys>65536 || !nkeys || !nfields)return -1;
     memset(out,0,sizeof(*out));cached_field=0xffffffffu;
+    scale_min=SKY_SCALE_MIN;scale_max=SKY_SCALE_MAX;
+    if(opt && opt->scale_min){
+        if(opt->scale_min>opt->scale_max)return -1;
+        scale_min=opt->scale_min<SKY_SCALE_MIN?SKY_SCALE_MIN:opt->scale_min;
+        scale_max=opt->scale_max>SKY_SCALE_MAX?SKY_SCALE_MAX:opt->scale_max;
+    }
     if(dir[nkeys].offset!=npatterns)return -1;
     for(unsigned i=0;i<nkeys;i++)if(dir[i].offset>dir[i+1].offset ||
         dir[i].key>=dir[i+1].key || dir[i+1].offset>npatterns)return -1;
