@@ -11,11 +11,16 @@ def package(camera: str, catalog: pathlib.Path) -> pathlib.Path:
     target=ROOT / "dist" / f"magiclantern-astro-{camera}.zip"
     assert camera in {"600D.102","6D.116"}, "Unsupported camera build"
     assert base.is_file() and catalog.is_file(), "Build firmware and catalog first"
+    module=ROOT / "modules" / "astro" / "build" / "astro.mo"
+    assert module.is_file(), "Build modules/astro before packaging"
+    module_bytes=module.read_bytes()
     target.parent.mkdir(exist_ok=True)
     with zipfile.ZipFile(base) as orig, zipfile.ZipFile(target,"w") as out:
-        for info in orig.infolist():
-            out.writestr(info,orig.read(info.filename))
         assert "ML/modules/astro.mo" in orig.namelist(), "Astro module missing"
+        for info in orig.infolist():
+            payload=(module_bytes if info.filename=="ML/modules/astro.mo"
+                     else orig.read(info.filename))
+            out.writestr(info,payload)
         out.write(catalog,"ML/ASTRO/STARS.BIN",compress_type=zipfile.ZIP_DEFLATED)
         index=catalog.with_suffix(".IDX")
         assert index.is_file(), "Generate STARS.IDX with make_catalog.py"
@@ -23,6 +28,12 @@ def package(camera: str, catalog: pathlib.Path) -> pathlib.Path:
         labels=catalog.with_suffix(".NAM")
         assert labels.is_file(), "Generate STARS.NAM with make_catalog.py"
         out.write(labels,"ML/ASTRO/STARS.NAM",compress_type=zipfile.ZIP_DEFLATED)
+        # The current solver uses the shared-field all-sky index, not the
+        # retired BLQ/BIX/BKX voting database. No user photographs are packed.
+        for name in ("SKY.DIR","SKY.PAT","SKY.FLD"):
+            data=catalog.parent/name
+            assert data.is_file(), "Generate the all-sky index with make_sky_index.py"
+            out.write(data,"ML/ASTRO/"+name,compress_type=zipfile.ZIP_DEFLATED)
         synthetic=ROOT/".astro-data"/"TEST.PGM"
         if synthetic.is_file():
             out.write(synthetic,"ML/ASTRO/TEST.PGM",
@@ -47,17 +58,20 @@ def package(camera: str, catalog: pathlib.Path) -> pathlib.Path:
             "Set Astronomy settings > Focus shortcut > Off to restore button.\n"
             "Electronic AF may move the lens. Not yet camera-validated.\n"
             "Trap Focus unchanged.\n"
-            "Plate solving requires an approximate position and enough stars\n"
-            "visible in LiveView. Long exposure RAW is NOT implemented.\n"
-            "STARS.BIN and STARS.IDX must both be copied to ML/ASTRO.\n"
-            "The solver shows separate RA and Dec fields in Astronomy settings.\n"
-            "To demo without a sensor, use Solve test PGM and set the hint to\n"
-            "RA 05:00 Dec +35 and FOV width 6.4 degrees. TEST.PGM is synthetic.\n",
+            "Experimental blind solving needs no pointing or lens input.\n"
+            "Requires >=8 verified stars. Long RAW exposure not implemented.\n"
+            "Copy every ML/ASTRO file, including SKY.DIR, SKY.PAT, SKY.FLD and STARS.NAM.\n"
+            "600D QEMU: both original photo-derived frames passed blind solving.\n"
+            "A successful Live View or image-file solve opens the annotated result automatically.\n"
+            "Q returns from the frozen result. Native album decoding remains unverified.\n"
+            "6D is compile-tested only. No physical-camera speed or safety validation is claimed.\n",
             compress_type=zipfile.ZIP_DEFLATED)
     with zipfile.ZipFile(target) as z:
         assert z.testzip() is None
+        assert z.read("ML/modules/astro.mo")==module_bytes, "Stale astro.mo in ZIP"
         for required in ("autoexec.bin","ML/modules/astro.mo",
-                         "ML/ASTRO/STARS.BIN","ML/ASTRO/STARS.IDX","ML/ASTRO/STARS.NAM"):
+                         "ML/ASTRO/STARS.BIN","ML/ASTRO/STARS.IDX","ML/ASTRO/STARS.NAM",
+                         "ML/ASTRO/SKY.DIR","ML/ASTRO/SKY.PAT","ML/ASTRO/SKY.FLD"):
             assert required in z.namelist()
     return target
 

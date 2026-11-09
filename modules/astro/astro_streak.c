@@ -37,11 +37,11 @@ static int sky_background(const uint8_t *im,int w,int h,int stride) {
 struct streak {
     int valid,vertical,slope_q,intercept_q,minaxis,maxaxis;
 };
-static struct streak detect_streak(const uint8_t *im,int w,int h,int stride) {
+static struct streak detect_streak(const uint8_t *im,int w,int h,int stride,int contrast) {
     struct streak no={0};
     if(!im || w<100 || h<80 || w>720 || h>480 || stride<w)return no;
     int bg=sky_background(im,w,h,stride);
-    int thr=bg+80;
+    int thr=bg+contrast;
     if(thr>225)return no;
     memset(hough_acc,0,sizeof(hough_acc));
     for(int y=1;y<h-1;y+=2)for(int x=1;x<w-1;x+=2) {
@@ -113,7 +113,9 @@ static struct streak detect_streak(const uint8_t *im,int w,int h,int stride) {
     return no;
 }
 int astro_mask_streak(uint8_t *im,int w,int h,int stride) {
-    struct streak st=detect_streak(im,w,h,stride);
+    struct streak st=detect_streak(im,w,h,stride,80);
+    if(!st.valid)st=detect_streak(im,w,h,stride,40);
+    if(!st.valid)st=detect_streak(im,w,h,stride,20);
     if(!st.valid)return 0;
     int bg=sky_background(im,w,h,stride);
     for(int y=0;y<h;y++)for(int x=0;x<w;x++) {

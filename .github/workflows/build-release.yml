@@ -2,6 +2,7 @@ name: Build experimental Midnight firmware
 on:
   push:
     branches: [main]
+    tags: ['v0.3.*']
   workflow_dispatch:
 permissions:
   contents: write
@@ -14,9 +15,9 @@ jobs:
       - name: Install ARM toolchain
         run: |
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-dev python3-docutils
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-dev python3-docutils python3-numpy python3-scipy
       - name: Reproduce both camera builds and run native tests
-        run: bash scripts/build.sh
+        run: PATH=/usr/bin:$PATH bash scripts/build.sh
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -24,15 +25,20 @@ jobs:
           path: dist/magiclantern-astro-*.zip
           if-no-files-found: error
       - name: Publish experimental prerelease
-        if: github.ref == 'refs/heads/main'
+        if: startsWith(github.ref, 'refs/tags/v0.3.')
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="v0.2.4-alpha.1"
+          tag="${GITHUB_REF_NAME}"
+          sha256sum dist/magiclantern-astro-*.zip > dist/SHA256SUMS.txt
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" dist/magiclantern-astro-*.zip --clobber
-          else
-            gh release create "$tag" dist/magiclantern-astro-*.zip --prerelease --title "Midnight gallery preview solving and decimal-degree coordinates" --notes "EXPERIMENTAL. Integer star-profile filter, Hough satellite-trail rejection and improved sky projection. 600D QEMU matches 16 and 8 stars in two processed real-photo frames, including a satellite trail. This is still hinted solving of LiveView, not automatic exposure or blind solving. Physical camera and autofocus motor not tested. Use a spare SD card."
+            echo "Refusing to overwrite an existing release: $tag" >&2
+            exit 1
           fi
+          gh release create "$tag" dist/magiclantern-astro-*.zip dist/SHA256SUMS.txt \
+            docs/images/midnight-7975-qemu.png docs/images/midnight-6446-qemu.png \
+            --verify-tag --prerelease \
+            --title "Midnight $tag: blind plate solving and automatic annotated previews" \
+            --notes-file "docs/releases/$tag.md"

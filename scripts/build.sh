@@ -19,6 +19,7 @@ curl --fail --location --retry 3 --silent --show-error --output "$ML_ROOT/.astro
 (
   cd "$ML_ROOT"
   python3 modules/astro/tools/make_catalog.py .astro-data/hygdata_v41.csv .astro-data/STARS.BIN
+  python3 modules/astro/tools/make_sky_index.py
   python3 modules/astro/tests/test_focus.py
   python3 modules/astro/tests/test_faults.py
   python3 modules/astro/tests/test_shortcut.py

@@ -43,26 +43,31 @@ int astro_find_stars_psf(const uint8_t *im,int w,int h,int stride,
         const uint8_t *row=im+sy*stride;
         for(int x=0;x<w;x++) {
             uint32_t sum_small=0,sum_large=0;
-            for(int j=-6;j<=6;j++)
-                sum_small+=(uint32_t)psf_small[j+6]*row[bound(x+j,w)];
-            for(int j=-PSF_R;j<=PSF_R;j++)
-                sum_large+=(uint32_t)psf_large[j+PSF_R]*row[bound(x+j,w)];
+            if(x>=12 && x<w-12){
+                /* Only the 24 edge pixels need clipping. Zero Gaussian
+                 * taps are omitted without changing the integer sums. */
+                const uint8_t *p=row+x;
+                for(int j=-4;j<=4;j++)sum_small+=(uint32_t)psf_small[j+6]*p[j];
+                for(int j=-12;j<=12;j++)sum_large+=(uint32_t)psf_large[j+PSF_R]*p[j];
+            } else {
+                for(int j=-4;j<=4;j++)sum_small+=(uint32_t)psf_small[j+6]*row[bound(x+j,w)];
+                for(int j=-12;j<=12;j++)sum_large+=(uint32_t)psf_large[j+PSF_R]*row[bound(x+j,w)];
+            }
             psf_hsmall[slot][x]=(uint16_t)((sum_small+2)/4);
             psf_hlarge[slot][x]=(uint16_t)((sum_large+2)/4);
         }
         if(step<PSF_R)continue;
         int y=step-PSF_R;
+        /* Ring-buffer modulo and boundary decisions are invariant across
+         * a whole row. Computing them per pixel made millions of slow
+         * software divisions on ARMv5 under -Os. */
+        const uint16_t *small_rows[9],*large_rows[25];
+        for(int k=-4;k<=4;k++)small_rows[k+4]=psf_hsmall[bound(y+k,h)%PSF_RING];
+        for(int k=-12;k<=12;k++)large_rows[k+12]=psf_hlarge[bound(y+k,h)%PSF_RING];
         for(int x=0;x<w;x++) {
             uint32_t small=0,large=0;
-            for(int k=-6;k<=6;k++) {
-                int ry=bound(y+k,h)%PSF_RING;
-                small+=(uint32_t)psf_small[k+6]*psf_hsmall[ry][x];
-            }
-            for(int k=-PSF_R;k<=PSF_R;k++) {
-                int ry=bound(y+k,h)%PSF_RING;
-                large+=(uint32_t)psf_large[k+PSF_R]*psf_hlarge[ry][x];
-            }
-            /* Q8 horizontal, Q10 weights -> Q4 output. */
+            for(int k=0;k<9;k++)small+=(uint32_t)psf_small[k+2]*small_rows[k][x];
+            for(int k=0;k<25;k++)large+=(uint32_t)psf_large[k+3]*large_rows[k][x];
             psf_response[y*w+x]=(int16_t)((int32_t)(small>>14)-(int32_t)(large>>14));
         }
     }
