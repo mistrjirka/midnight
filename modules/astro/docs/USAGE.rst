@@ -16,7 +16,7 @@ Live View frame, and opens a frozen annotated result automatically on
 success. The delay is not an exposure. Q returns to Midnight. This
 sensor-input workflow remains unverified on hardware.
 
-Astronomy settings -> Solve image file reads a strict 360x240 grayscale
+Midnight advanced -> Developer tests -> Solve image file reads a strict 360x240 grayscale
 PGM selected under Image file. TEST.PGM and TEST1.PGM through TEST3.PGM
 are supported. The result opens automatically. This is the QEMU-tested
 workflow. Original user photographs are not distributed.
@@ -37,3 +37,22 @@ Bahtinov diffraction-spike measurement is not implemented.
 
 See the root README, docs/QEMU_RESULTS.md and docs/QEMU_DEVELOPMENT.md
 for full installation, test scope, recovery and reproduction details.
+
+Quick menu and display gain
+---------------------------
+
+Midnight home has eight rows. Live View gain reuses Magic Lantern's
+photo-only preview control. RIGHT raises it by one stop; LEFT lowers it.
+Off through +6 EV are supported, without wrapping at the endpoints.
++3 EV is eight times preview brightness. Saved photos, ISO and movie
+exposure gain are unchanged. Gain also increases visible noise and clips
+highlights, so do not judge exposure from the boosted preview.
+
+This setting shares its value with Display -> LV display gain. It works
+in photo Live View, not movie mode, and is locked during focus/solving.
+No second gain configuration or new register-writing code is added.
+
+Midnight advanced groups Star focus settings, Last solve and Developer
+tests. The one-shot focus action is under Star focus settings. Developer
+tests use prepared PGM files, not Canon album images. Full Magic Lantern
+retains all original ML photo, video, audio and diagnostic controls.

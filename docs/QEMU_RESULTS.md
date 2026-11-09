@@ -28,3 +28,35 @@ Original CR2 -> original embedded JPEG -> thumbnail -> 360x240 grayscale PGM -> 
 The tested action is **Midnight -> Astronomy settings -> Solve image file**. The raw-photo decoding step happens before this test. Physical cameras, autofocus motors, 6D emulation, and native Play -> Q -> SET album handling have not been validated. The 6D package is compile-tested only.
 
 The old 210-second timeout and failed top-32 candidate tests concern the retired `astro_blind` voting implementation, not the shared-field `astro_sky` implementation in this release. Do not reintroduce the old module object or BLQ database.
+
+## v0.3.1-alpha.1 quick-menu and gain update
+
+The updated module was loaded in actual Canon 600D 1.0.2 QEMU. All eight
+Midnight quick controls fit on one screen. Star focus settings, Last solve
+and Developer tests open correctly under Midnight advanced.
+
+The gain callback was driven through the camera menu from Off to +6 EV,
+with an additional RIGHT press at maximum, then back to Off with an
+additional LEFT press. Logged native photo-gain values were
+`2048, 4096, 8192, 16384, 32768, 65536, 32768, 16384, 8192, 4096, 2048, 1024`.
+The movie-gain getter remained `1024` and Canon raw ISO remained `0`
+throughout. A fresh-card repeat with the final module also passed.
+
+The relocated Developer tests -> Solve image file action solved the
+bundled synthetic PGM with **22 verified stars**, then opened the annotated
+frame automatically. Q returned to Midnight. The earlier real-photo
+30/14-star results above remain the v0.3.0 acceptance evidence, not new
+sensor tests. The sky solver, capture/solve routine and result worker are
+unchanged in this menu-only update.
+
+![Actual gain menu](images/midnight-gain-menu-qemu.png)
+![Actual advanced submenu](images/midnight-advanced-qemu.png)
+
+The script `modules/astro/tests/test_gain_menu.py` extracts the production
+gain callback and tests it against injected ML state. It verifies the
+movie-mode/busy guards, endpoints and absence of ISO/movie-gain writes.
+It is a policy test, not a substitute for QEMU. The emulator's movie-mode
+switch did not provide a stable ML menu for an end-to-end movie guard
+check, so that behavior is not claimed as visually verified. Sensor
+brightening and physical-camera behavior remain unverified. The 6D is
+build/symbol checked, not emulated.

@@ -789,6 +789,61 @@ static MENU_SELECT_FUNC(start_focus) { start_action(1); }
 static MENU_SELECT_FUNC(start_solve) { start_action(2); }
 static MENU_SELECT_FUNC(start_test) { start_action(3); }
 static MENU_SELECT_FUNC(start_measure) { start_action(4); }
+
+/* Mirror the EXISTING photo-only ML gain. Never use the mode-dependent
+ * set_display_gain_equiv(): in movie mode that changes recorded digital ISO.
+ * These symbols are exported by both pinned 600D.102 and 6D.116 builds.
+ * No second persistent value: changes in either menu stay synchronized. */
+extern int get_digic_iso_gain_photo(void);
+extern int get_digic_iso_gain_movie(void);
+extern void display_gain_toggle(void *priv, int delta);
+static int preview_gain_ev=0;
+static int get_preview_gain_ev(void)
+{
+    int gain=get_digic_iso_gain_photo();
+    int ev=0;
+    while(ev<6 && gain>(1024<<ev))ev++;
+    return ev;
+}
+static MENU_SELECT_FUNC(change_preview_gain)
+{
+    if(busy || overlay_busy){
+        NotifyBox(2000,"Gain locked during focus / solve");
+        return;
+    }
+    if(is_movie_mode()){
+        NotifyBox(2000,"Live View gain: photo mode only");
+        return;
+    }
+    /* A single step, bounded at Off/+6 EV, avoids wrapping maximum gain
+     * to Off or Off straight to maximum with an accidental left press. */
+    int ev=get_preview_gain_ev();
+    int step=delta>0?1:delta<0?-1:0;
+    if(!step || (step<0 && ev==0) || (step>0 && ev==6))return;
+    display_gain_toggle(0,step); /* always the PHOTO gain, never movie gain */
+    preview_gain_ev=get_preview_gain_ev();
+    /* Exposure overlays are not accurate when display gain is active. */
+    redraw();
+    DryosDebugMsg(0,15,"ASTRO gain photo=%d movie=%d iso=%d",
+                  get_digic_iso_gain_photo(),get_digic_iso_gain_movie(),lens_info.raw_iso);
+}
+static MENU_UPDATE_FUNC(preview_gain_status)
+{
+    preview_gain_ev=get_preview_gain_ev();
+    if(preview_gain_ev)
+        MENU_SET_VALUE("+%d EV (%dx)",preview_gain_ev,1<<preview_gain_ev);
+    else
+        MENU_SET_VALUE("OFF");
+    MENU_SET_ENABLED(preview_gain_ev);
+    if(busy || overlay_busy)
+        MENU_SET_WARNING(MENU_WARN_NOT_WORKING,"Wait for focus / solving before changing gain.");
+    else if(is_movie_mode())
+        MENU_SET_WARNING(MENU_WARN_NOT_WORKING,"Photo preview only. Movie gain is not changed.");
+    else if(!lv)
+        MENU_SET_WARNING(MENU_WARN_ADVICE,"Open photo Live View to see the gain. Photos are unchanged.");
+    else if(preview_gain_ev)
+        MENU_SET_WARNING(MENU_WARN_ADVICE,"Preview boosted: exposure display is not an exposure guide.");
+}
 static MENU_UPDATE_FUNC(astro_status)
 {
     MENU_SET_VALUE("%s",last_status);
@@ -890,44 +945,68 @@ static unsigned int astro_keypress_raw(unsigned int event_ptr)
 static struct menu_entry astro_menu[] = {
     {
         .name="Midnight",
-        .help="Astrophotography home. Q/LEFT returns to the standard tabs.",
+        .help="Astronomy quick controls. Other ML features remain available below.",
         .children=(struct menu_entry[]) {
             { .name="Intervalometer settings", .select=open_intervalometer,
-              .help="Jump to ML's existing intervalometer and exposure interval.",
+              .help="Open the interval, start trigger and shot-count controls.",
               .icon_type=IT_ACTION },
             { .name="Bulb Timer settings", .select=open_bulb_timer,
-              .help="Jump to ML's existing bulb exposure timer.",
+              .help="Open the timer for a single long exposure.",
               .icon_type=IT_ACTION },
+            { .name="Live View gain", .priv=&preview_gain_ev,.min=0,.max=6,
+              .select=change_preview_gain,.update=preview_gain_status,
+              .help="Photo preview only. ISO and saved photographs are unchanged.",
+              .help2="LEFT/RIGHT: Off to +6 EV (64x). Gain also amplifies noise.",
+              .depends_on=DEP_PHOTO_MODE,.icon_type=IT_PERCENT_OFF },
             { .name="Manual star focus", .priv=&focus_overlay,.min=0,.max=1,
-              .help="LiveView sharpness score, no motor. Use a bright star at 5x/10x." },
-            { .name="Measure star now", .select=start_measure,
-              .help="Read-only one-shot sharpness check; never moves a lens.",
-              .icon_type=IT_ACTION },
+              .help="LiveView sharpness score, no motor. Use the same star at 5x/10x." },
             { .name="Auto focus (no mask)", .select=start_focus,
-              .help="Electronic lens only; uses star sharpness, NOT Bahtinov spikes.",
+              .help="Electronic AF lens only. Uses star size, not Bahtinov spikes.",
               .icon_type=IT_ACTION },
             { .name="Solve LiveView (3s)", .select=start_solve,
-              .help="Wait 3 seconds, then identify sky without a pointing hint.",
+              .help="Wait 3 seconds, solve without hints and open the annotated frame.",
               .icon_type=IT_ACTION },
-            { .name="Astronomy settings", .select=menu_open_submenu, .children=(struct menu_entry[]) {
-                { .name="Solve image file", .select=start_test,
-                  .help="Blind solve selected PGM and show verified star names.",
-                  .icon_type=IT_ACTION },
-                { .name="Image file",.priv=&test_image,.min=0,.max=3,
-                  .choices=CHOICES("TEST.PGM","TEST1.PGM","TEST2.PGM","TEST3.PGM"),
-                  .help="Image under ML/ASTRO. No sky coordinates needed." },
-                { .name="Motor step size",.priv=&focus_step,.min=1,.max=3 },
-                { .name="Focus radius",.priv=&scan_radius,.min=1,.max=6 },
-                { .name="Focus shortcut",.priv=&shortcut,.min=0,.max=3,
-                  .choices=CHOICES("Off","Double half-press","INFO button","DISP/LIGHT"),
-                  .help="Default ON: 600D DISP, 6D LCD light. Set Off to restore the original button. Photo LV only." },
-                { .name="Last result",.update=astro_status,.icon_type=IT_ACTION },
-                { .name="RA (deg)",.update=astro_ra_result,.icon_type=IT_ACTION },
-                { .name="Dec (deg)",.update=astro_dec_result,.icon_type=IT_ACTION },
+            { .name="Midnight advanced", .select=menu_open_submenu,
+              .help="Focus tuning, last coordinates and developer-only file tests.",
+              .children=(struct menu_entry[]) {
+                { .name="Star focus settings", .select=menu_open_submenu,
+                  .help="Motor tuning and button assignments. Usually leave defaults.",
+                  .children=(struct menu_entry[]) {
+                    { .name="Measure star now",.select=start_measure,
+                      .help="One focus reading without lens movement. The live score is on Midnight home.",
+                      .icon_type=IT_ACTION },
+                    { .name="Motor step size",.priv=&focus_step,.min=1,.max=3,
+                      .help="Electronic focus step command. Start at 1; actual movement depends on lens." },
+                    { .name="Focus radius",.priv=&scan_radius,.min=1,.max=6,
+                      .help="Number of motor steps tested to each side, not an image or sky radius." },
+                    { .name="Focus shortcut",.priv=&shortcut,.min=0,.max=3,
+                      .choices=CHOICES("Off","Double half-press","INFO button","DISP/LIGHT"),
+                      .help="600D DISP / 6D LCD-light in photo LV. Choose Off to keep the Canon button." },
+                    MENU_EOL
+                  } },
+                { .name="Last solve", .select=menu_open_submenu,
+                  .help="Read-only result of the last solve. No pointing coordinates are required.",
+                  .children=(struct menu_entry[]) {
+                    { .name="Last result",.update=astro_status,.icon_type=IT_ACTION },
+                    { .name="RA (deg)",.update=astro_ra_result,.icon_type=IT_ACTION },
+                    { .name="Dec (deg)",.update=astro_dec_result,.icon_type=IT_ACTION },
+                    MENU_EOL
+                  } },
+                { .name="Developer tests", .select=menu_open_submenu,
+                  .help="PGM test files, not the Canon photo album. Not needed for normal shooting.",
+                  .children=(struct menu_entry[]) {
+                    { .name="Solve image file", .select=start_test,
+                      .help="Developer test: solve the selected 360x240 PGM from ML/ASTRO.",
+                      .icon_type=IT_ACTION },
+                    { .name="Image file",.priv=&test_image,.min=0,.max=3,
+                      .choices=CHOICES("TEST.PGM","TEST1.PGM","TEST2.PGM","TEST3.PGM"),
+                      .help="TEST.PGM is synthetic. TEST1/2/3.PGM must be supplied separately." },
+                    MENU_EOL
+                  } },
                 MENU_EOL
-            } },
+              } },
             { .name="Full Magic Lantern", .select=open_normal_menus,
-              .help="Leave the Midnight dashboard and show the original shooting menus.",
+              .help="Other ML photo, video, audio and system tools. No settings reset.",
               .icon_type=IT_ACTION },
             MENU_EOL
         },

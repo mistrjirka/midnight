@@ -38,7 +38,7 @@ jobs:
             exit 1
           fi
           gh release create "$tag" dist/magiclantern-astro-*.zip dist/SHA256SUMS.txt \
-            docs/images/midnight-7975-qemu.png docs/images/midnight-6446-qemu.png \
+            docs/images/midnight-*-qemu.png \
             --verify-tag --prerelease \
-            --title "Midnight $tag: blind plate solving and automatic annotated previews" \
+            --title "Midnight $tag" \
             --notes-file "docs/releases/$tag.md"

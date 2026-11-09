@@ -7,7 +7,7 @@ An astronomy-first interface for [Magic Lantern](https://github.com/reticulatedp
 ## Install
 
 1. Check your model and Canon firmware under **MENU -> Firmware Ver.**
-2. Download the matching full ZIP from [v0.3.0-alpha.1](https://github.com/mistrjirka/midnight/releases/tag/v0.3.0-alpha.1).
+2. Download the matching full ZIP from [v0.3.1-alpha.1](https://github.com/mistrjirka/midnight/releases/tag/v0.3.1-alpha.1).
 3. **Existing Magic Lantern card:** extract the entire ZIP at the root of a spare bootable card, replacing the old files. Do not rerun the installer. Preserve your known-working card.
 4. **Fresh card:** format it in the camera, extract the matching ZIP at its root, then use **MENU -> Firmware Ver. -> Firmware Update** in **M mode** to run `ML-SETUP.FIR`. Follow the installer and restart. This sets up Magic Lantern booting, not a replacement Canon firmware.
 5. Open Magic Lantern with **Trash/Delete**, enable **astro** under **Modules**, and restart.
@@ -26,7 +26,7 @@ The three-second delay is **not an exposure** and does not release the shutter. 
 
 ### From an image file
 
-Open **Midnight -> Astronomy settings -> Image file**, select a prepared `TEST.PGM` or `TEST1.PGM` through `TEST3.PGM`, then select **Solve image file**. The annotated result opens automatically on success. This is the reproducible workflow tested in QEMU. Inputs are strict 360x240, 8-bit grayscale PGM files. The package includes a synthetic catalog-derived test image, not the original user photographs.
+Open **Midnight -> Midnight advanced -> Developer tests -> Image file**, select a prepared `TEST.PGM` or `TEST1.PGM` through `TEST3.PGM`, then select **Solve image file**. The annotated result opens automatically on success. This is the reproducible workflow tested in QEMU. Inputs are strict 360x240, 8-bit grayscale PGM files. The package includes a synthetic catalog-derived test image, not the original user photographs.
 
 ### From Canon playback
 
@@ -57,16 +57,35 @@ Exact test pipeline: original CR2 embedded JPEG -> 360x240 grayscale PGM -> virt
 
 ## Midnight tools
 
+<img src="docs/images/midnight-gain-menu-qemu.png" alt="Actual Canon 600D QEMU Midnight quick menu with photo-only Live View gain set to plus 3 EV, eight times brightness" width="720">
+
+The quick menu fits on one screen. Video/audio/RAW-video and debug tools remain available under **Full Magic Lantern**, rather than being deleted or changing existing camera settings.
+
+
 | Option | Action |
 |---|---|
 | Intervalometer settings | Opens Magic Lantern's existing interval, start-trigger and shot-count controls |
 | Bulb Timer settings | Opens long-exposure timing controls |
 | Manual star focus | Toggles a live star-sharpness score; does not move the lens |
-| Measure star now | Measures focus once without moving the lens |
+| Live View gain | Brightens photo Live View only: Off to +6 EV (64x). ISO and saved photos are unchanged |
 | Auto focus (no mask) | Tries small electronic focus steps on a bright star |
 | Solve LiveView (3s) | Captures and blindly solves a frame, then automatically shows the annotated result |
-| Astronomy settings | Image-file solving, focus controls, and last coordinates |
+| Midnight advanced | Optional focus tuning, read-only last result, and developer tests |
 | Full Magic Lantern | Returns to the normal shooting menus |
+
+### Live View gain
+
+Select **Live View gain** and use **RIGHT** to increase or **LEFT** to decrease. Range: **Off, +1, +2, +3, +4, +5, +6 EV**. Each step doubles preview brightness: +3 EV is 8x, +6 EV is 64x. The control stops at both ends instead of wrapping.
+
+This is Magic Lantern's existing **photo-preview gain**, shared with **Display -> LV display gain**. It does not change ISO, saved RAW/JPEG exposure, or movie digital ISO. It can be set before entering photo Live View. It is blocked in movie mode and during a Midnight focus or solve operation. Gain also amplifies noise and can clip highlights. A boosted preview is not an exposure guide.
+
+### Advanced controls
+
+| Location under Midnight advanced | Contents |
+|---|---|
+| Star focus settings | One-shot Measure star now, motor step size, focus search radius, and focus shortcut |
+| Last solve | Read-only status, RA and Dec, not pointing inputs |
+| Developer tests | Prepared PGM test files and Solve image file, not the Canon photo album |
 
 ### Focus
 
@@ -74,7 +93,7 @@ Center a bright star at **5x/10x Live View**. For manual focusing, turn **Manual
 
 For electronic autofocus, set the lens to **AF**, disable continuous/servo AF, and select **Auto focus (no mask)**. Start with **Motor step size = 1** and **Focus radius = 3**. Motor behavior has not been tested on a physical camera.
 
-**The focus shortcut is on by default:** DISP on 600D or LCD-light on 6D. In photo Live View it can move an electronic AF lens; with a manual-focus lens it toggles the focus score. Set **Astronomy settings -> Focus shortcut -> Off** to restore the original button behavior. It does not override menus, playback, or movie mode.
+**The focus shortcut is on by default:** DISP on 600D or LCD-light on 6D. In photo Live View it can move an electronic AF lens; with a manual-focus lens it toggles the focus score. Set **Midnight advanced -> Star focus settings -> Focus shortcut -> Off** to restore the original button behavior. It does not override menus, playback, or movie mode.
 
 A Bahtinov mask can be used visually, but Midnight does not yet measure its diffraction-spike alignment. The numeric focus score measures star size without a mask.
 

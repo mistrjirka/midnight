@@ -23,6 +23,7 @@ curl --fail --location --retry 3 --silent --show-error --output "$ML_ROOT/.astro
   python3 modules/astro/tests/test_focus.py
   python3 modules/astro/tests/test_faults.py
   python3 modules/astro/tests/test_shortcut.py
+  python3 modules/astro/tests/test_gain_menu.py
   python3 modules/astro/tests/test_solver.py .astro-data/STARS.BIN
   python3 modules/astro/tests/test_streak.py .astro-data/TEST.PGM
   python3 modules/astro/tests/test_psf.py

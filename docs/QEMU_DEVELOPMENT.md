@@ -70,6 +70,8 @@ qemu-img convert -f raw -O qcow2 "$RUN/sd.raw" "$RUN/sd.qcow2"
 cp --reflink=auto .astro-data/emulator-assets/pristine.qcow2 "$RUN/cf.qcow2"
 ```
 
+In v0.3.1-alpha.1 and newer, open **Midnight -> Midnight advanced -> Developer tests -> Solve image file**. Focus tuning is under **Star focus settings** and coordinates under **Last solve**. The quick menu has eight rows, with **Live View gain** replacing the duplicate one-shot focus action.
+
 The PGM header must be exactly `P5\n360 240\n255\n`, followed by 86,400 grayscale bytes. The accepted photographs were converted from their original embedded Canon JPEGs before the test. No pointing or reference coordinates are supplied to the firmware. Do not describe this pre-conversion as native camera RAW decoding.
 
 ## Boot and control the emulated camera
