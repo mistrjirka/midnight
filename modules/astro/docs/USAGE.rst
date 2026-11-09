@@ -5,6 +5,36 @@ Experimental Canon 600D 1.0.2 and 6D 1.1.6 module. The 600D image-file
 solver and annotated LCD result were tested in QEMU. The 6D is compile
 tested only. Physical camera operation remains unverified.
 
+Installation
+------------
+
+Use a spare SD card and keep your known-working Magic Lantern card.
+Do not install a package for a different camera or Canon firmware version.
+
+1. Check your camera and Canon firmware under MENU -> Firmware Ver.
+2. Download the matching full ZIP from the Midnight release linked in the
+   root README.
+3. For an existing bootable Magic Lantern card, extract the entire ZIP at
+   the card root and replace the old files. Do not rerun the installer.
+4. For a fresh card, format it in the camera and extract the matching ZIP
+   at the card root. In M mode, use MENU -> Firmware Ver. -> Firmware Update
+   to run ML-SETUP.FIR. Follow the installer and restart. This sets up Magic
+   Lantern booting, not a replacement Canon firmware.
+5. Press Trash/Delete, enable astro under Modules, and restart.
+
+Trash now opens Midnight first. Choose Full Magic Lantern or press Q/Left
+for the original menus. Copy every ML/ASTRO file, including SKY.DIR,
+SKY.PAT, SKY.FLD and STARS.NAM. The retired STARS.BLQ/BIX/BKX database is
+not used.
+
+Recovery
+--------
+
+If the camera fails to start, turn it off, remove the SD card and try
+without it. If necessary, remove and reinsert the battery without the
+card. Restore the known-working card. Do not delete autoexec.bin from a
+bootable Magic Lantern card.
+
 Plate solving
 -------------
 
@@ -35,8 +65,8 @@ validated. DISP on 600D or LCD-light on 6D is enabled as a focus shortcut
 by default. Set Focus shortcut -> Off to restore the original behavior.
 Bahtinov diffraction-spike measurement is not implemented.
 
-See the root README, docs/QEMU_RESULTS.md and docs/QEMU_DEVELOPMENT.md
-for full installation, test scope, recovery and reproduction details.
+See the root README for a feature overview, docs/QEMU_RESULTS.md for
+verified test scope, and docs/QEMU_DEVELOPMENT.md for emulator setup.
 
 Quick menu and display gain
 ---------------------------
