@@ -1,55 +1,52 @@
 # Midnight
 
-Astrophotography controls for [Magic Lantern](https://github.com/reticulatedpines/magiclantern_simplified) on **Canon EOS 600D (1.0.2)** and **Canon EOS 6D (1.1.6)**.
+Astronomy tools for **Magic Lantern on Canon 600D (1.0.2) and 6D (1.1.6)**.
 
-[Download v0.3.1-alpha.1](https://github.com/mistrjirka/midnight/releases/tag/v0.3.1-alpha.1) · [User guide](modules/astro/docs/USAGE.rst)
+[Experimental modular release: v0.4.0-alpha.1](https://github.com/mistrjirka/midnight/releases/tag/v0.4.0-alpha.1) · [Installation and recovery guide](docs/INSTALL.md)
 
 ## Features
 
-| Feature | What it does |
+| Feature | Function |
 |---|---|
-| **Blind plate solving** | Identifies the sky without position or focal-length inputs. Optional focal-length hint (lens or manual) for much faster solves; reports the measured focal length. |
-| **Target & guide** | Pick an object from M, NGC, IC, Caldwell, Barnard or Sharpless. Live View guiding shows an arrow toward the target, or its outline when it is in frame. |
-| **Sky overlays** | Constellation figures, deep-sky outlines at true size and angle, and star names with Greek Bayer letters (γ Cas), on Live View, image and playback results. |
-| **Live View gain** | Brightens the photo preview from Off to +6 EV (64x), without changing ISO or saved photographs. |
-| **Manual star focus** | Shows a live star-size score to help you focus. |
-| **Auto focus (no mask)** | Tries small electronic lens movements to focus on a bright star. |
-| **Intervalometer and Bulb Timer** | Provides timed shooting and long-exposure controls. |
+| Plate solving | Identifies sky coordinates without pointing hints. Optional focal-length hints speed up solving |
+| Target guiding | Finds M, NGC, IC, Caldwell, Barnard and Sharpless objects. Draws an arrow or outline |
+| Polar alignment | Uses two sky solutions about the RA axis, then guides mount adjustment |
+| Sky annotations | Star names, constellations, and oriented deep-sky outlines |
+| Manual star focus | Size score at 5x/10x Live View |
+| Autofocus | Experimental electronic lens adjustments, not hardware validated |
+| Live View gain | Photo-only preview gain, Off to +6 EV, without changing saved photos |
+| Timed shooting | Original Magic Lantern intervalometer and Bulb Timer links |
 
-<img src="docs/images/midnight-gain-menu-qemu.png" alt="Actual Canon 600D QEMU quick menu with Live View gain at +3 EV" width="720">
+Open **Trash/Delete → Focus → Midnight**.
 
-Focus tuning and previous results are under **Midnight advanced**. Other tools remain available through **Full Magic Lantern**.
+## 600D emulation
 
-## Plate-solving previews
+![Canon 600D QEMU: 11 matched stars, RA/Dec, sky outlines and guiding arrow](docs/images/midnight-modular-600d-qemu.png)
 
-Actual Canon 600D QEMU screenshots: **30 matched stars** in the clean photograph and **14** in the photograph with a bright trail.
+The screenshot is from **Canon 600D QEMU**, not a physical exposure.
+Its bundled synthetic sky solved with **11 matches in 0.19 s of emulator-reported solving time**.
+[Testing details and limits](docs/MODULAR_MIGRATION.md).
 
-<p>
-  <a href="docs/images/midnight-7975-qemu.png"><img src="docs/images/midnight-7975-qemu.png" alt="30 verified stars with sky coordinates and star names" width="49%"></a>
-  <a href="docs/images/midnight-6446-qemu.png"><img src="docs/images/midnight-6446-qemu.png" alt="14 verified stars in a photograph with a bright trail" width="49%"></a>
-</p>
+## Installation
 
-These tests use prepared previews from real photographs. [Test details and limits](docs/QEMU_RESULTS.md).
+**Recommended:** update an existing compatible Magic Lantern card using the module-only ZIP. Back up the card, then extract the ZIP to the card root. Do not overwrite `autoexec.bin` when updating an existing Magic Lantern installation.
 
-## Quick use
+See the [step-by-step installation, first tests and rollback guide](docs/INSTALL.md) for 600D/6D firmware versions and direct downloads.
 
-- **Solve:** Open **1x photo Live View** and choose **Solve LiveView (3s)**. After a three-second settling delay, a successful solve opens the annotated frame. **Q** returns to Midnight. The delay does not take an exposure.
-- **Focus:** Center a bright star at **5x/10x**, enable **Manual star focus**, and adjust for the lowest score. Compare the same star at the same zoom.
-- **Gain:** Use **LEFT/RIGHT** on **Live View gain**. It also amplifies noise, so do not judge exposure from the boosted preview.
-- **Find an object:** **Target & guide** → choose a catalogue and number (for example M 42), then **Guide in LiveView**. Follow the red arrow until the target outline appears; **Q** stops. Setting the lens focal length (**Midnight advanced → Lens focal length**) makes updates much faster.
+## Source
 
-## Install
+The modular architecture is derived from
+[kubakubakuba/AstroML](https://github.com/kubakubakuba/AstroML).
+Portable algorithms live in modules/astro/core, camera integration in
+modules/astro, and host tests in tests. Original Midnight code is retained in
+tests/reference_midnight for regression comparisons.
 
-**Experimental:** 600D image-file solving and menu controls are QEMU-tested. The 6D is compile-tested only. Physical-camera operation and native gallery decoding remain unverified.
+Build and run tests:
 
-1. Download the full ZIP matching your camera and Canon firmware. Use a spare card and keep your working installation.
-2. **Existing Magic Lantern card:** extract the entire ZIP at the card root. **Fresh card:** follow the [installation guide](modules/astro/docs/USAGE.rst#installation).
-3. Press **Trash/Delete**, enable **astro** in **Modules**, and restart. Trash now opens Midnight.
+    PYTHON=python3 RUN_SLOW_TESTS=1 bash scripts/build.sh
 
-**Focus shortcut:** 600D **DISP** / 6D **LCD-light** is enabled by default and can move an AF lens. Disable it under **Midnight advanced -> Star focus settings -> Focus shortcut**.
+[Migration status](docs/MODULAR_MIGRATION.md) · [C code review](docs/C_CODE_REVIEW.md)
 
----
-
-[User guide and recovery](modules/astro/docs/USAGE.rst) · [Build from source](scripts/build.sh) · [QEMU setup](docs/QEMU_DEVELOPMENT.md)
-
-Midnight / Magic Lantern: GPL-2.0-or-later. HYG catalog: David Nash / Astronexus, CC BY-SA 4.0. OpenNGC: Mattia Verga, CC BY-SA 4.0. Barnard (VII/220A) and Sharpless (VII/20) via VizieR/CDS. Constellation figures: d3-celestial, Olaf Frohn, BSD-3-Clause.
+**Safety:** The modular branch is not yet a camera-validated release.
+Physical gallery solving, sensor Live View, polar alignment and lens motors
+must pass on-camera tests before it replaces the working firmware.

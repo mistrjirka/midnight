@@ -2,7 +2,9 @@ name: Build experimental Midnight firmware
 on:
   push:
     branches: [main]
-    tags: ['v0.3.*']
+    tags: ['v0.3.*', 'v0.4.*']
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: write
@@ -15,29 +17,31 @@ jobs:
       - name: Install ARM toolchain
         run: |
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-dev python3-docutils python3-numpy python3-scipy
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-dev python3-docutils python3-numpy python3-scipy python3-typer python3-pil python3-pytest
       - name: Reproduce both camera builds and run native tests
         run: PATH=/usr/bin:$PATH bash scripts/build.sh
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
         with:
           name: midnight-experimental-firmware
-          path: dist/magiclantern-astro-*.zip
+          path: |
+            dist/magiclantern-astro-*.zip
+            dist/midnight-module-*.zip
           if-no-files-found: error
       - name: Publish experimental prerelease
-        if: startsWith(github.ref, 'refs/tags/v0.3.')
+        if: startsWith(github.ref, 'refs/tags/v0.3.') || startsWith(github.ref, 'refs/tags/v0.4.')
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          sha256sum dist/magiclantern-astro-*.zip > dist/SHA256SUMS.txt
+          sha256sum dist/*.zip > dist/SHA256SUMS.txt
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Refusing to overwrite an existing release: $tag" >&2
             exit 1
           fi
-          gh release create "$tag" dist/magiclantern-astro-*.zip dist/SHA256SUMS.txt \
+          gh release create "$tag" dist/magiclantern-astro-*.zip dist/midnight-module-*.zip dist/SHA256SUMS.txt \
             docs/images/midnight-*-qemu.png \
             --verify-tag --prerelease \
             --title "Midnight $tag" \

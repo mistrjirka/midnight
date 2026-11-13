@@ -5,3 +5,6 @@ __pycache__/
 *.pyc
 modules/astro/build/
 .venv/
+tests/build/
+.pytest_cache/
+**/__pycache__/
