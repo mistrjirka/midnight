@@ -38,6 +38,8 @@ static volatile int gallery_prompt=0;
 static volatile int gallery_results=0;
 static volatile int gallery_result_pending=0;
 static volatile int gallery_running=0;
+static volatile int gallery_failed=0;
+static uint32_t gallery_prompt_time=0;
 static int solved_matched_stars=0;
 static int result_from_gallery=0;
 static uint32_t gallery_image_sig=0;
@@ -185,6 +187,20 @@ static void draw_gallery_progress(void)
        bmp_fill(COLOR_BLACK,12,407,695,43);
        bmp_printf(FONT(FONT_MED,COLOR_YELLOW,COLOR_BLACK),
                   20,414,"Finding sky: %s",last_status);
+    );
+}
+
+static void draw_gallery_failure(void)
+{
+    if(!gallery_failed || !is_pure_play_photo_mode())return;
+    BMP_LOCK(
+        bmp_fill(COLOR_BLACK,14,365,692,88);
+        bmp_printf(FONT(FONT_MED,COLOR_YELLOW,COLOR_BLACK),
+                   22,371,"MIDNIGHT: COULD NOT SOLVE");
+        bmp_printf(FONT(FONT_MED,COLOR_WHITE,COLOR_BLACK),
+                   22,402,"%s",last_status);
+        bmp_printf(FONT(FONT_SMALL,COLOR_WHITE,COLOR_BLACK),
+                   22,430,"Q: dismiss | LEFT/RIGHT: other photo");
     );
 }
 
@@ -370,9 +386,15 @@ static void load_target(void){
 }
 static void lookup_task(void *unused){load_target();lookup_busy=0;}
 /* Stars, deep-sky outlines, constellations and the target for the solution. */
+static int wait_target_lookup(void){
+    uint32_t started=(uint32_t)get_ms_clock();
+    while(lookup_busy && (uint32_t)(get_ms_clock()-started)<3000)
+        msleep(20);
+    return !lookup_busy;
+}
 static void build_overlay(void){
     astro_overlay_opts opt={ov_stars,ov_dso,ov_const,45,ov_dso_mag*10};
-    while(lookup_busy)msleep(20);
+    if(!wait_target_lookup()){scene_valid=0;return;}
     load_target();
     struct overlay_files o;open_overlay_files(&o);
     astro_build_scene(&sky_result.wcs,IM_W,IM_H,&opt,(target_on && target.valid)?&target:0,&o.f,&scene);
@@ -530,7 +552,9 @@ static void do_guide(void){
     char text[64];
     solve_cancel=0;
     if(lv_dispsize!=1){strcpy(last_status,"Use 1x LiveView");return;}
-    while(lookup_busy)msleep(20);
+    if(!wait_target_lookup()){
+        strcpy(last_status,"Target catalogue lookup timed out");return;
+    }
     load_target();
     if(!target.valid){strcpy(last_status,"Pick a target first");return;}
     for(int i=0;i<30 && gui_menu_shown();i++)msleep(50);   /* menu closing */
@@ -551,7 +575,8 @@ static void do_guide(void){
             );
             shown_scene=scene;drawn=1;
             target_status(text,sizeof(text));
-            strcat(text,"   Q: stop");
+            int used=strlen(text);
+            snprintf(text+used,sizeof(text)-used,"   Q: stop");
             guide_hud(text,scene.target==1?COLOR_GREEN1:COLOR_YELLOW);
         } else {
             snprintf(text,sizeof(text),"%s: hold still / raise LV gain   Q: stop",
@@ -604,13 +629,23 @@ static unsigned int astro_seconds(unsigned int unused)
     if(file_preview){display_on();bmp_on();draw_file_preview();return 0;}
     /* Gallery drawings stay visible over the selected photograph, while
      * Canon may redraw the bitmap when overlays or UI states change. */
-    if(gallery_prompt || gallery_results || gallery_running) {
+    if(gallery_prompt || gallery_results || gallery_running || gallery_failed) {
+        /* Canon may temporarily change its playback dialog while servicing
+         * button events. Do not discard a pending Q/SET confirmation solely
+         * because PlayMain is temporarily not the active dialog. */
+        if(gallery_prompt && (uint32_t)(get_ms_clock()-gallery_prompt_time)>15000) {
+            gallery_prompt=0;
+            strcpy(last_status,"Gallery: confirmation timed out");
+        }
         if(!is_pure_play_photo_mode()) {
-            gallery_prompt=gallery_results=gallery_result_pending=0;
-            gallery_running=0;
+            if(!is_play_or_qr_mode()) {
+                gallery_results=gallery_result_pending=gallery_failed=0;
+                gallery_running=0;
+            }
         } else if(gallery_prompt) draw_gallery_prompt();
         else if(gallery_results) draw_gallery_results();
-        else draw_gallery_progress();
+        else if(gallery_failed) draw_gallery_failure();
+        else if(gallery_running) draw_gallery_progress();
     }
     if(!focus_overlay || !lv || is_movie_mode() || gui_menu_shown())return 0;
     if(overlay_score>=0)
@@ -642,12 +677,22 @@ static void astro_worker(void *ignored)
     else if(action==6)do_guide();
     else if(action==2 || action==3 || action==5) {
         if(action==2) {
-            /* 3-second vibration settling before reading LIVEVIEW pixels.
-             * Do not delay gallery images; their exposure was already taken. */
+            /* Leave the ML menu before acquiring the actual sensor frame.
+             * The menu itself may otherwise obscure the Live View display. */
+            gui_stop_menu();
+            msleep(300);
             strcpy(last_status,"Stabilizing: 3 seconds");
             for(int elapsed=0;elapsed<3000;elapsed+=100) {
-                if(!lv || is_movie_mode() || is_play_or_qr_mode()) {
-                    strcpy(last_status,"LiveView changed; solve cancelled");
+                if(!lv) {
+                    strcpy(last_status,"LiveView switched off during solve");
+                    goto completed;
+                }
+                if(is_movie_mode()) {
+                    strcpy(last_status,"Switch to photo mode for LiveView solve");
+                    goto completed;
+                }
+                if(is_play_or_qr_mode()) {
+                    strcpy(last_status,"Playback opened during LiveView solve");
                     goto completed;
                 }
                 msleep(100);
@@ -675,13 +720,25 @@ completed:
             gallery_result_pending=0;
             strcpy(last_status,"Photo changed; result hidden");
         }
-        NotifyBox(4500,"Astro: %s",last_status);
+        if(action==5 && is_pure_play_photo_mode()) {
+            gallery_failed=1;
+            draw_gallery_failure();
+        } else {
+            NotifyBox(4500,"Astro: %s",last_status);
+        }
     }
     busy=0;
 }
 static void start_action(int action)
 {
-    if(busy || overlay_busy)return;
+    if(busy || overlay_busy) {
+        if(action==5) {
+            strcpy(last_status,"Gallery: another action is busy");
+            gallery_failed=1;
+            draw_gallery_failure();
+        }
+        return;
+    }
     if(!(is_camera("600D","1.0.2")||is_camera("6D","1.1.6"))) {
         NotifyBox(3000,"Astro: unsupported camera version");
         return;
@@ -696,14 +753,23 @@ static void start_action(int action)
         solve_dec_text[0]=0;
         result_from_gallery=0;
         gallery_results=0;
+        gallery_failed=0;
         gallery_result_pending=0;
         scene_valid=0;
     }
     strcpy(last_status,"Running...");
+    if(action==5 && is_pure_play_photo_mode())
+        draw_gallery_progress();
     if(!task_create("astro_task",0x1d,0x4000,astro_worker,0)) {
         strcpy(last_status,"Could not start worker task");
         gallery_running=0;
         busy=0;
+        if(action==5 && is_pure_play_photo_mode()) {
+            gallery_failed=1;
+            draw_gallery_failure();
+        } else {
+            NotifyBox(4500,"Astro: %s",last_status);
+        }
     }
 }
 /* Jump to the original Magic Lantern controls. Never duplicate its
@@ -725,7 +791,23 @@ static MENU_SELECT_FUNC(open_normal_menus)
     menu_redraw();
 }
 static MENU_SELECT_FUNC(start_focus) { start_action(1); }
-static MENU_SELECT_FUNC(start_solve) { start_action(2); }
+static MENU_SELECT_FUNC(start_solve)
+{
+    if(!lv) {
+        strcpy(last_status,"Turn on 1x photo LiveView before solving");
+    } else if(is_movie_mode()) {
+        strcpy(last_status,"Switch to photo LiveView before solving");
+    } else if(is_play_or_qr_mode()) {
+        strcpy(last_status,"Close photo playback before LiveView solve");
+    } else if(lv_dispsize!=1) {
+        strcpy(last_status,"Use 1x LiveView (not 5x or 10x)");
+    } else {
+        start_action(2);
+        return;
+    }
+    NotifyBox(5500,"Astro: %s",last_status);
+}
+
 static MENU_SELECT_FUNC(start_test) { start_action(3); }
 static MENU_SELECT_FUNC(start_measure) { start_action(4); }
 static MENU_SELECT_FUNC(start_guide) { gui_stop_menu(); start_action(6); }
@@ -843,6 +925,70 @@ static MENU_UPDATE_FUNC(manual_focal_update)
     if(focal_source!=2)MENU_SET_WARNING(MENU_WARN_ADVICE,"Used only when Focal length source is Manual.");
     else if(fov>6000)MENU_SET_WARNING(MENU_WARN_ADVICE,"Over 60 deg: install the optional SKYW wide index.");
 }
+static unsigned int astro_gallery_keypress(unsigned int key)
+{
+    /* Service an outstanding confirmation BEFORE checking the transient
+     * Canon dialog state. On the 600D, PLAY -> Q can briefly leave
+     * PlayMain during button handling. Releasing SET to Canon also enables
+     * the unrelated SET+MainDial exposure adjustment shortcut. */
+    if(gallery_prompt) {
+        if((uint32_t)(get_ms_clock()-gallery_prompt_time)>15000) {
+            gallery_prompt=0;
+            strcpy(last_status,"Gallery: confirmation timed out");
+        } else if(!gui_menu_shown()) {
+            if(key==MODULE_KEY_PRESS_SET) {
+                gallery_prompt=0;
+                clrscr();
+                start_action(5);
+                return 0;
+            }
+            if(key==MODULE_KEY_Q) {
+                gallery_prompt=0;
+                strcpy(last_status,"Gallery: cancelled before solve");
+                clrscr();
+                return 0;
+            }
+            if(key==MODULE_KEY_PRESS_LEFT || key==MODULE_KEY_PRESS_RIGHT ||
+               key==MODULE_KEY_PLAY || key==MODULE_KEY_MENU ||
+               key==MODULE_KEY_TRASH) {
+                gallery_prompt=0;
+                clrscr();
+            }
+            /* Ignore unrelated press/release keys. They must not dismiss
+             * the confirmation or leak the SET press to SET+MainDial. */
+            return 1;
+        }
+    }
+    if(!is_pure_play_photo_mode() || gui_menu_shown()) {
+        if(gui_menu_shown() || !is_play_or_qr_mode())
+            gallery_prompt=gallery_results=gallery_failed=0;
+        return 1;
+    }
+    if(key==MODULE_KEY_Q) {
+        if(gallery_results || gallery_failed) {
+            gallery_results=gallery_failed=0;
+            clrscr();
+            return 0;
+        }
+        if(!busy) {
+            gallery_prompt=1;
+            gallery_prompt_time=(uint32_t)get_ms_clock();
+            strcpy(last_status,"Gallery: waiting for SET");
+            draw_gallery_prompt();
+            return 0;
+        }
+    }
+    if(gallery_results || gallery_failed) {
+        if(key==MODULE_KEY_PRESS_LEFT || key==MODULE_KEY_PRESS_RIGHT ||
+           key==MODULE_KEY_PLAY || key==MODULE_KEY_MENU ||
+           key==MODULE_KEY_TRASH) {
+            gallery_results=gallery_failed=0;
+            clrscr();
+        }
+    }
+    return 1;
+}
+
 static unsigned int astro_keypress(unsigned int key)
 {
     if(file_preview){
@@ -853,45 +999,7 @@ static unsigned int astro_keypress(unsigned int key)
     }
     if(busy && (requested_action==2 || requested_action==3 || requested_action==5 || requested_action==6) &&
        key==MODULE_KEY_Q){solve_cancel=1;return 0;}
-    /* Photo gallery: Q opens a confirmation, SET runs the solver on
-     * the full-screen playback YUV preview. No file rewriting, no motor.
-     * Esc/navigation restores Canon key behavior. */
-    if(is_pure_play_photo_mode() && !gui_menu_shown()) {
-        if(gallery_prompt) {
-            if(key==MODULE_KEY_PRESS_SET && !busy) {
-                gallery_prompt=0;
-                clrscr();
-                start_action(5);
-                return 0;
-            }
-            if(key==MODULE_KEY_Q) {
-                gallery_prompt=0;
-                clrscr();
-                return 0;
-            }
-            gallery_prompt=0;
-            clrscr();
-        }
-        if(key==MODULE_KEY_Q) {
-            if(gallery_results) {
-                gallery_results=0;
-                clrscr();
-                return 0;
-            }
-            if(!busy) {
-                gallery_prompt=1;
-                draw_gallery_prompt();
-                return 0;
-            }
-        }
-        if(gallery_results && key!=MODULE_KEY_INFO) {
-            gallery_results=0;
-            clrscr();
-        }
-    } else {
-        gallery_prompt=0;
-        gallery_results=0;
-    }
+    if(!astro_gallery_keypress(key))return 0;
     if(shortcut>=1 && shortcut<=2 && !busy && !overlay_busy &&
        lv && !is_movie_mode() && !gui_menu_shown() && display_idle()) {
         int activate=(shortcut==1 &&

@@ -34,7 +34,11 @@ fetch constellations.json "https://raw.githubusercontent.com/ofrohn/d3-celestial
   python3 modules/astro/tests/test_faults.py
   python3 modules/astro/tests/test_shortcut.py
   python3 modules/astro/tests/test_gain_menu.py
+  python3 modules/astro/tests/test_gallery_input.py
+  python3 modules/astro/tests/test_liveview_entry.py
   python3 modules/astro/tests/test_solver.py .astro-data/STARS.BIN
+  # The synthetic grayscale TEST.PGM is created by test_solver.py.
+  python3 modules/astro/tests/test_gallery_capture.py
   python3 modules/astro/tests/test_streak.py .astro-data/TEST.PGM
   python3 modules/astro/tests/test_psf.py
   python3 modules/astro/tests/test_catalog_index.py .astro-data/STARS.BIN
