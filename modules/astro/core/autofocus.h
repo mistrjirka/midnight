@@ -12,6 +12,9 @@ typedef struct {
     int (*step)(void *context, int direction, int speed); /* one motor step */
     int (*frame)(void *context, uint8_t *pixels, int width, int height);
     void (*sleep_ms)(void *context, int milliseconds);
+    /* Optional cooperative cancellation. The camera callback reads only the
+     * ticket for this specific worker request; never move a lens after cancel. */
+    int (*cancelled)(void *context);
 } astro_focus_io;
 
 typedef enum {

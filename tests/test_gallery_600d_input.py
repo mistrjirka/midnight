@@ -7,6 +7,9 @@ import tempfile
 SRC = (Path(__file__).resolve().parents[1] / "modules/astro/playback.c").read_text()
 source = SRC[SRC.index("static void close_view(void)"):SRC.index("/* The SET press", SRC.index("static void close_view(void)"))]
 source += SRC[SRC.index("unsigned int astro_playback_key(unsigned int key)"):]
+MAIN = (Path(__file__).resolve().parents[1] / "modules/astro/astro.c").read_text()
+source += MAIN[MAIN.index("static unsigned int astro_keypress(unsigned int key)"):
+               MAIN.index("static unsigned int astro_keypress_raw(")]
 stubs = r"""
 #include <stdint.h>
 #include <stdio.h>
@@ -25,6 +28,11 @@ typedef enum { VIEW_IDLE, VIEW_PROMPT, VIEW_RUNNING, VIEW_RESULTS, VIEW_FAILURE 
 static struct {volatile view_state state; uint32_t prompt_time_ms,run_time_ms;} pb;
 static int pure_play=1,play_or_qr=1,menu=0,requests,accept_request=1,working,immediate_fail;
 static int cleared,progress,prompts,failures,cancelled;
+static int result_visible, result_hidden, menu_opened;
+static int astro_result_visible(void){return result_visible;}
+static void astro_result_hide(void){result_visible=0;result_hidden++;}
+static void gui_open_menu(void){menu_opened++;}
+static unsigned int astro_focus_key(unsigned int key){(void)key;return 1;}
 static uint32_t now=100;
 static char last_status[64];
 static int is_pure_play_photo_mode(void){return pure_play;}
@@ -56,9 +64,11 @@ wrappers = r"""
 void reset(void){
     memset(&pb,0,sizeof(pb));pure_play=play_or_qr=accept_request=1;
     menu=requests=working=cleared=progress=prompts=failures=cancelled=immediate_fail=0;
+    result_visible=result_hidden=menu_opened=0;
     now=100;last_status[0]=0;
 }
 int press(int key){return astro_playback_key((unsigned int)key);}
+int mainkeypress(int key){return astro_keypress((unsigned int)key);}
 void tick(void){astro_playback_tick();}
 void set(int id,int value){
     switch(id){
@@ -67,13 +77,15 @@ void set(int id,int value){
       case 4:accept_request=value;break;case 5:working=value;break;
       case 6:pb.state=(view_state)value;break;
       case 7:immediate_fail=value;break;
+      case 8:result_visible=value;break;
     }
 }
 int get(int id){
     switch(id){
       case 0:return pb.state;case 1:return requests;case 2:return cleared;
       case 3:return prompts;case 4:return progress;case 5:return failures;
-      case 6:return cancelled;default:return working;
+      case 6:return cancelled;case 7:return result_hidden;
+      case 8:return menu_opened;default:return working;
     }
 }
 const char* status(void){return last_status;}
@@ -87,6 +99,7 @@ def test_gallery_q_set():
                         "-Werror","-Wno-unused-function","-o",str(so),str(file)],check=True)
         lib=C.CDLL(str(so))
         lib.press.argtypes=[C.c_int];lib.press.restype=C.c_int
+        lib.mainkeypress.argtypes=[C.c_int];lib.mainkeypress.restype=C.c_int
         lib.set.argtypes=[C.c_int,C.c_int]
         lib.get.argtypes=[C.c_int];lib.get.restype=C.c_int
         lib.status.restype=C.c_char_p
@@ -115,3 +128,21 @@ def test_gallery_q_set():
         lib.reset();lib.press(29);lib.set(7,1)
         assert lib.press(9)==0 and lib.get(0)==4
         assert lib.get(4)==0, "late progress repaint hid immediate failure"
+        # The worker can still be busy just after posting a successful gallery
+        # result. Q must hide it, not set the cancellation flag of old work.
+        lib.reset();lib.set(6,3);lib.set(5,1)
+        assert lib.mainkeypress(29)==0 and lib.get(0)==0
+        assert lib.get(6)==0, "result Q was swallowed by generic cancel"
+        # While a gallery request is genuinely running, Q still cancels.
+        lib.reset();lib.set(6,2);lib.set(5,1)
+        assert lib.mainkeypress(29)==0 and lib.get(6)==1
+        # Between worker completion and the timer tick, Q closes progress.
+        lib.reset();lib.set(6,2);lib.set(5,0)
+        assert lib.mainkeypress(29)==0 and lib.get(0)==0
+        # For non-gallery operations the generic cancellation path remains.
+        lib.reset();lib.set(5,1)
+        assert lib.mainkeypress(29)==0 and lib.get(6)==1
+        # One-shot file solve result has highest priority of all.
+        lib.reset();lib.set(8,1);lib.set(5,1)
+        assert lib.mainkeypress(29)==0 and lib.get(6)==0
+        assert lib.get(7)==1 and lib.get(8)==1

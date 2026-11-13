@@ -114,6 +114,10 @@ void astro_playback_run_solve(void)
         msleep(25);
     }
     pb.signature = astro_playback_signature();
+    if (astro_cancel_requested()) {
+        fail_playback("Cancelled by Q");
+        return;
+    }
     if (!is_pure_play_photo_mode() || !pb.signature) {
         fail_playback("Photo playback not ready");
         return;
@@ -129,7 +133,9 @@ void astro_playback_run_solve(void)
     }
     astro_solve_release();
 
-    if (status != ASTRO_SOLVE_OK) {
+    if (astro_cancel_requested()) {
+        fail_playback("Cancelled by Q");
+    } else if (status != ASTRO_SOLVE_OK) {
         fail_playback(astro_solve_status_text(status));
     } else if (!is_pure_play_photo_mode() ||
                astro_playback_signature() != pb.signature) {
@@ -189,7 +195,8 @@ unsigned int astro_playback_key(unsigned int key)
     }
     if (pb.state == VIEW_RUNNING) {
         if (key == MODULE_KEY_Q) {
-            astro_cancel();
+            if (astro_busy()) astro_cancel();
+            else close_view(); /* finished before the 1 Hz UI tick */
             return 0;
         }
         /* A second SET must not enable the unrelated exposure-adjust action. */

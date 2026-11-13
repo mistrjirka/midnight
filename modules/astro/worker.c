@@ -23,11 +23,17 @@ static struct {
     struct semaphore *lock;
     volatile int pending; /* posted but not finished */
     volatile int busy;    /* a foreground action is posted or running */
-    volatile int cancel;
     volatile int stopped;
     volatile int closing; /* QUIT was queued: no new work may enter */
     volatile int started;
     volatile astro_action running;
+    /* The producer owns next_ticket under lock. The GUI only reads active_ticket
+     * and writes cancel_ticket using native 32-bit relaxed atomic load/store.
+     * Running ticket is read and written by this worker task only. */
+    uint32_t next_ticket;
+    uint32_t active_ticket;
+    uint32_t cancel_ticket;
+    uint32_t running_ticket;
     uint8_t *image;
 } worker;
 
@@ -58,14 +64,23 @@ astro_action astro_running_action(void)
 
 void astro_cancel(void)
 {
-    if (worker.started) {
-        worker.cancel = 1;
+    /* GUI key callbacks must not wait for the worker's lock or queue.
+     * ARMv5TE compiles relaxed 32-bit loads/stores to plain LDR/STR,
+     * avoiding unavailable __sync_synchronize/libatomic helpers.
+     *
+     * A delayed cancellation write for an old ticket cannot affect new work. */
+    uint32_t ticket = __atomic_load_n(&worker.active_ticket, __ATOMIC_RELAXED);
+    if (ticket) {
+        __atomic_store_n(&worker.cancel_ticket, ticket, __ATOMIC_RELAXED);
     }
 }
 
 int astro_cancel_requested(void)
 {
-    return worker.cancel;
+    /* Called by the worker only: queued foreground work also carries its
+     * cancellation when it starts behind an older background action. */
+    uint32_t ticket = worker.running_ticket;
+    return ticket && __atomic_load_n(&worker.cancel_ticket, __ATOMIC_RELAXED) == ticket;
 }
 
 uint8_t *astro_image(void)
@@ -90,17 +105,32 @@ int astro_request(astro_action action)
         (action == ASTRO_ACTION_QUIT ||
          (is_foreground(action) && !worker.busy) ||
          (!is_foreground(action) && !worker.pending))) {
+        if (is_foreground(action)) {
+            /* Reserve the ticket before posting. The worker may receive the
+             * message immediately, and Q may arrive while we hold this lock.
+             * Do not clear cancel_ticket on new actions: doing so could erase
+             * a concurrent cancel request. Skip zero and any stale token. */
+            uint32_t ticket = worker.next_ticket + 1;
+            if (!ticket) ticket = 1;
+            if (ticket == __atomic_load_n(&worker.cancel_ticket, __ATOMIC_RELAXED)) {
+                ++ticket;
+                if (!ticket) ticket = 1;
+            }
+            worker.next_ticket = ticket;
+            worker.busy = 1;
+            __atomic_store_n(&worker.active_ticket, ticket, __ATOMIC_RELAXED);
+        }
         accepted = msg_queue_post(worker.queue, (uint32_t)action) == 0;
+        if (!accepted && is_foreground(action)) {
+            worker.busy = 0;
+            __atomic_store_n(&worker.active_ticket, 0u, __ATOMIC_RELAXED);
+        }
     }
     if (accepted) {
         worker.pending++;
         if (action == ASTRO_ACTION_QUIT) {
-            /* Prevent new requests from being posted *behind* QUIT. Those
-             * would be abandoned and could reference an unloaded module. */
+            /* Never allow messages to remain queued after the worker quits. */
             worker.closing = 1;
-        } else if (is_foreground(action)) {
-            worker.busy = 1;
-            worker.cancel = 0;
         }
     }
     give_semaphore(worker.lock);
@@ -161,7 +191,14 @@ static void worker_task(void *unused)
         if (!worker.image) {
             worker.image = malloc(ASTRO_IMAGE_BYTES);
         }
+        /* astro_request() owns the foreground ticket until this action
+         * completes. Read it only after taking the same lock, so even if the
+         * worker woke immediately after msg_queue_post(), it sees the ID. */
+        take_semaphore(worker.lock, 0);
         worker.running = action;
+        worker.running_ticket = is_foreground(action)
+            ? __atomic_load_n(&worker.active_ticket, __ATOMIC_RELAXED) : 0;
+        give_semaphore(worker.lock);
         if (worker.image) {
             run(action);
         } else if (is_foreground(action)) {
@@ -170,8 +207,10 @@ static void worker_task(void *unused)
 
         take_semaphore(worker.lock, 0);
         worker.running = ASTRO_ACTION_NONE;
+        worker.running_ticket = 0;
         worker.pending--;
         if (is_foreground(action)) {
+            __atomic_store_n(&worker.active_ticket, 0u, __ATOMIC_RELAXED);
             worker.busy = 0;
         }
         give_semaphore(worker.lock);
@@ -198,10 +237,13 @@ int astro_worker_start(void)
     }
     worker.stopped = 0;
     worker.closing = 0;
-    worker.cancel = 0;
     worker.busy = 0;
     worker.pending = 0;
     worker.running = ASTRO_ACTION_NONE;
+    worker.next_ticket = 0;
+    worker.running_ticket = 0;
+    __atomic_store_n(&worker.active_ticket, 0u, __ATOMIC_RELAXED);
+    __atomic_store_n(&worker.cancel_ticket, 0u, __ATOMIC_RELAXED);
     worker.started = 1;
     uint32_t task_id = task_create("astro_worker", TASK_PRIORITY, TASK_STACK, worker_task, 0);
     if (!task_id || (task_id & 1u)) {

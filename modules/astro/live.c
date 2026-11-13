@@ -47,7 +47,11 @@ void astro_live_loop(astro_live_frame_fn on_frame, void *context, astro_live_sta
         stats->frames++;
         stats->solved += status == ASTRO_SOLVE_OK;
         on_frame(context, status, &result);
-        msleep(PAUSE_MS);
+        /* Q should stop the guide between frames within 50 ms rather than
+         * waiting out a full PAUSE_MS with no cancellation check. */
+        for (int waited = 0; waited < PAUSE_MS && keep_running(); waited += 50) {
+            msleep(50);
+        }
     }
     astro_solve_release();
     astro_hud_clear();

@@ -45,7 +45,7 @@ Build and run tests:
 
     PYTHON=python3 RUN_SLOW_TESTS=1 bash scripts/build.sh
 
-[Migration status](docs/MODULAR_MIGRATION.md) · [C code review](docs/C_CODE_REVIEW.md)
+[Migration status](docs/MODULAR_MIGRATION.md) · [C code review](docs/C_CODE_REVIEW.md) · [Cancellation design](docs/CANCELLATION.md)
 
 **Safety:** The modular branch is not yet a camera-validated release.
 Physical gallery solving, sensor Live View, polar alignment and lens motors
