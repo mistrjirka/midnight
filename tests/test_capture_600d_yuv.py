@@ -49,7 +49,7 @@ def test_600d_playback_image():
         lib.result.restype=C.POINTER(C.c_uint8)
         lib.settings.argtypes=[C.c_int,C.c_int]
         lib.reset()
-        file=(ROOT/".astro-data/TEST.PGM").read_bytes()
+        file=(ROOT/"tests/data/TEST.PGM").read_bytes()
         assert file[:15]==b"P5\n360 240\n255\n"
         sample=file[15:]
         pixels=lib.pixels()
