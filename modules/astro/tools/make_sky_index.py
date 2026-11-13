@@ -48,6 +48,14 @@ def encode(points):
             ba[choose]=aa[choose];bb[choose]=ab[choose];bf[choose]=flip
     return best,fine,ba,bb,bf,valid
 
+# Radii (degrees) of the overlapping sky fields. The optional --wide index
+# (SKYW.*) adds 19 and 27 degree fields for fields of view beyond ~60 degrees;
+# they use 4-millidegree coordinate units (stored in the field header pad).
+RADII=(2.3,3.5,5.5,8.5,13.0)
+RADII_WIDE=(19.0,27.0)
+def field_unit(radius):
+    return 1 if radius<=13 else 4
+
 def worker(task):
     start,fields=task
     src,xyz,tree,mags=G
@@ -61,13 +69,16 @@ def worker(task):
         if len(ids)<10:
             blocks.append(bytes(FIELD_BYTES));continue
         # Verification covers the observed frame beyond the pattern region.
-        allids=np.asarray(tree.query_ball_point(o,2*math.sin(math.radians(min(30,radius*2.1))/2)),dtype=int)
+        # Wide-lens levels store coarser units so 55-degree fields fit int16.
+        unit=field_unit(radius)
+        reach=min(30,radius*2.1) if unit==1 else min(55,radius*2.1)
+        allids=np.asarray(tree.query_ball_point(o,2*math.sin(math.radians(reach)/2)),dtype=int)
         others=sorted((j for j in allids if j not in ids),key=lambda j:(int(mags[j]),int(j)))[:NVERIFY-10]
         selected=np.array(ids+others,dtype=int)
         denom=xyz[selected]@o
         pos=np.column_stack((xyz[selected]@east,xyz[selected]@north))/denom[:,None]
-        pos*=180000/math.pi
-        # Fixed signed millidegrees, sufficient for <=30-degree fields.
+        pos*=180000/math.pi/unit
+        # Fixed signed units of `unit` millidegrees (header pad field).
         inside=np.all(np.abs(pos)<32760,axis=1)
         selected=selected[inside];pos=pos[inside]
         if len(selected)<10:
@@ -76,7 +87,7 @@ def worker(task):
         cats['x'][:len(pos)]=np.rint(pos[:,0]).astype(np.int16)
         cats['y'][:len(pos)]=np.rint(pos[:,1]).astype(np.int16)
         cats['name'][:len(pos)]=src['name'][selected];cats['mag'][:len(pos)]=mags[selected]
-        header=struct.pack('<IiHHI',round(ra0*10000)%3600000,round(dec0*10000),len(selected),round(radius*100),0)
+        header=struct.pack('<IiHHI',round(ra0*10000)%3600000,round(dec0*10000),len(selected),round(radius*100),unit if unit>1 else 0)
         blocks.append(header+cats.tobytes())
         # Encode the quantized coordinates actually stored on the SD card.
         p=np.column_stack((cats['x'][:10],cats['y'][:10])).astype(float)
@@ -91,7 +102,7 @@ def worker(task):
         records.append(r)
     return np.concatenate(records) if records else np.empty(0,DT),b''.join(blocks),start
 
-def generate():
+def generate(radii=RADII,prefix='SKY'):
     start=time.monotonic()
     src=np.frombuffer((ROOT/'.astro-data/STARS.BIN').read_bytes()[16:],dtype=[('ra','<u4'),('dec','<i4'),('mag','<u2'),('name','<u2')])
     ra=np.deg2rad(src['ra']/10000);dec=np.deg2rad(src['dec']/10000)
@@ -99,13 +110,13 @@ def generate():
     global G
     G=(src,xyz,cKDTree(xyz),src['mag'])
     fields=[]
-    for radius in (2.3,3.5,5.5,8.5,13.0):
+    for radius in radii:
         spacing=radius*.72
         for d in np.arange(-86.0,86.001,spacing):
             n=max(1,round(360*math.cos(math.radians(d))/spacing))
             for k in range(n):fields.append((k*360/n,float(d),radius))
     print('fields',len(fields),'pattern upper bound',len(fields)*len(COMB),'field bytes',FIELD_BYTES,flush=True)
-    fld=ROOT/'.astro-data/SKY.FLD';pat=ROOT/'.astro-data/SKY.PAT';dire=ROOT/'.astro-data/SKY.DIR'
+    fld=ROOT/f'.astro-data/{prefix}.FLD';pat=ROOT/f'.astro-data/{prefix}.PAT';dire=ROOT/f'.astro-data/{prefix}.DIR'
     arrays=[]
     with fld.open('wb') as file:
         file.write(struct.pack('<4sIII',b'SFLD',1,len(fields),FIELD_BYTES))
@@ -128,4 +139,8 @@ def generate():
     print('DONE fields',len(fields),'patterns',len(arr),'keys',len(unique),'directory RAM',table.nbytes,
           'MB',round((pat.stat().st_size+fld.stat().st_size+dire.stat().st_size)/1e6,1),'seconds',round(time.monotonic()-start,1),flush=True)
 
-if __name__=='__main__':generate()
+if __name__=='__main__':
+    ap=argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--wide',action='store_true',help='build the optional SKYW.* wide-lens index instead')
+    args=ap.parse_args()
+    generate(RADII_WIDE,'SKYW') if args.wide else generate()

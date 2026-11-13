@@ -8,7 +8,9 @@ Astrophotography controls for [Magic Lantern](https://github.com/reticulatedpine
 
 | Feature | What it does |
 |---|---|
-| **Blind plate solving** | Identifies the sky without position or focal-length inputs. Automatically shows coordinates and named stars over the solved frame. |
+| **Blind plate solving** | Identifies the sky without position or focal-length inputs. Optional focal-length hint (lens or manual) for much faster solves; reports the measured focal length. |
+| **Target & guide** | Pick an object from M, NGC, IC, Caldwell, Barnard or Sharpless. Live View guiding shows an arrow toward the target, or its outline when it is in frame. |
+| **Sky overlays** | Constellation figures, deep-sky outlines at true size and angle, and star names with Greek Bayer letters (γ Cas), on Live View, image and playback results. |
 | **Live View gain** | Brightens the photo preview from Off to +6 EV (64x), without changing ISO or saved photographs. |
 | **Manual star focus** | Shows a live star-size score to help you focus. |
 | **Auto focus (no mask)** | Tries small electronic lens movements to focus on a bright star. |
@@ -34,6 +36,7 @@ These tests use prepared previews from real photographs. [Test details and limit
 - **Solve:** Open **1x photo Live View** and choose **Solve LiveView (3s)**. After a three-second settling delay, a successful solve opens the annotated frame. **Q** returns to Midnight. The delay does not take an exposure.
 - **Focus:** Center a bright star at **5x/10x**, enable **Manual star focus**, and adjust for the lowest score. Compare the same star at the same zoom.
 - **Gain:** Use **LEFT/RIGHT** on **Live View gain**. It also amplifies noise, so do not judge exposure from the boosted preview.
+- **Find an object:** **Target & guide** → choose a catalogue and number (for example M 42), then **Guide in LiveView**. Follow the red arrow until the target outline appears; **Q** stops. Setting the lens focal length (**Midnight advanced → Lens focal length**) makes updates much faster.
 
 ## Install
 
@@ -49,4 +52,4 @@ These tests use prepared previews from real photographs. [Test details and limit
 
 [User guide and recovery](modules/astro/docs/USAGE.rst) · [Build from source](scripts/build.sh) · [QEMU setup](docs/QEMU_DEVELOPMENT.md)
 
-Midnight / Magic Lantern: GPL-2.0-or-later. HYG catalog: David Nash / Astronexus, CC BY-SA 4.0.
+Midnight / Magic Lantern: GPL-2.0-or-later. HYG catalog: David Nash / Astronexus, CC BY-SA 4.0. OpenNGC: Mattia Verga, CC BY-SA 4.0. Barnard (VII/220A) and Sharpless (VII/20) via VizieR/CDS. Constellation figures: d3-celestial, Olaf Frohn, BSD-3-Clause.
