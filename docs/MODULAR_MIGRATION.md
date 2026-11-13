@@ -1,6 +1,6 @@
 # Modular Midnight migration review
 
-**Status: experimental branch, not released firmware.**
+**Status: v0.4.0-alpha.1 experimental prerelease.**
 
 ## Scope
 
@@ -61,5 +61,9 @@ tests portable C against preserved original sources, and builds camera ZIPs.
 5. Validate polar alignment with human-supervised movement before advising
    motorized mount control.
 
-The code is on a migration branch. Existing GitHub main, release tags, and
-the camera SD card remain unchanged pending these checks.
+The release is experimental. Merging source changes does not update the
+firmware already installed on a camera.
+
+Install and recovery instructions: [INSTALL.md](INSTALL.md).
+
+C audit: [C_CODE_REVIEW.md](C_CODE_REVIEW.md).

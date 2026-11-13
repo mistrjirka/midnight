@@ -31,6 +31,7 @@ static unsigned int astro_deinit(void)
     if (!astro_worker_stop()) {
         return CBR_RET_ERROR; /* still working: refuse to unload */
     }
+    astro_result_release();
     astro_menu_remove();
     return 0;
 }

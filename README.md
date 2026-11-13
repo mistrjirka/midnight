@@ -2,7 +2,7 @@
 
 Astronomy tools for **Magic Lantern on Canon 600D (1.0.2) and 6D (1.1.6)**.
 
-[Experimental modular release: v0.4.0-alpha.1](https://github.com/mistrjirka/midnight/releases/tag/v0.4.0-alpha.1)
+[Experimental modular release: v0.4.0-alpha.1](https://github.com/mistrjirka/midnight/releases/tag/v0.4.0-alpha.1) · [Installation and recovery guide](docs/INSTALL.md)
 
 ## Features
 
@@ -29,20 +29,9 @@ Its bundled synthetic sky solved with **11 matches in 0.19 s of emulator-reporte
 
 ## Installation
 
-**Already using compatible Magic Lantern:** use the matching module-only package
-from a validated release. It replaces only the Midnight module and star data,
-not camera boot flags, autoexec.bin, photos, or existing ML settings.
+**Recommended:** update an existing compatible Magic Lantern card using the module-only ZIP. Back up the card, then extract the ZIP to the card root. Do not overwrite `autoexec.bin` when updating an existing Magic Lantern installation.
 
-**New installation on a spare SD card:** use the full Magic Lantern firmware
-ZIP matching your camera firmware. Follow the usual Magic Lantern boot-card
-procedure. Never cross-install the 600D and 6D full firmware files.
-
-Enable the astro module in the Modules tab and restart.
-
-- **Gallery:** Play → Q → SET to solve the displayed photo preview.
-- **Live View:** Activate 1x photo Live View before selecting Solve Live View (3s).
-- **Focus:** Use the same star at 5x/10x and minimize its size score.
-- **Lens hint:** Under Lens, select From lens or Manual.
+See the [step-by-step installation, first tests and rollback guide](docs/INSTALL.md) for 600D/6D firmware versions and direct downloads.
 
 ## Source
 
@@ -56,7 +45,7 @@ Build and run tests:
 
     PYTHON=python3 RUN_SLOW_TESTS=1 bash scripts/build.sh
 
-[Migration status](docs/MODULAR_MIGRATION.md)
+[Migration status](docs/MODULAR_MIGRATION.md) · [C code review](docs/C_CODE_REVIEW.md)
 
 **Safety:** The modular branch is not yet a camera-validated release.
 Physical gallery solving, sensor Live View, polar alignment and lens motors

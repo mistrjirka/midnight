@@ -15,6 +15,8 @@ void astro_result_show(const astro_solve_result *result, const astro_scene *scen
 
 int astro_result_visible(void);
 void astro_result_hide(void);
+/* Frees the cached 360x240 frame when the module safely unloads. */
+void astro_result_release(void);
 void astro_result_redraw(void); /* from the 1 Hz callback: Canon may repaint the screen */
 
 #endif

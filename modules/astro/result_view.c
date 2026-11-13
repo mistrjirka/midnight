@@ -112,6 +112,16 @@ void astro_result_hide(void)
     clrscr();
 }
 
+void astro_result_release(void)
+{
+    view.visible = 0;
+    /* Serialize with the 1 Hz redraw callback before releasing its frame. */
+    BMP_LOCK(
+        free(view.frame);
+        view.frame = NULL;
+    );
+}
+
 static void blit_frame(uint8_t *vram)
 {
     for (int y = 0; y < VIEW_H; y++) {
@@ -144,6 +154,11 @@ static void draw_text(void)
 /* Whole screen: frame, overlays, matched stars and text. Call under BMP_LOCK. */
 static void paint(void)
 {
+    /* The visible state may have changed while the callback waited for
+     * the bitmap lock; never use a frame released during module unload. */
+    if (!view.visible || !view.frame) {
+        return;
+    }
     uint8_t *vram = bmp_vram();
 
     if (!vram) {

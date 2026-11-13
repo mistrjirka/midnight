@@ -25,6 +25,8 @@ static struct {
     volatile int busy;    /* a foreground action is posted or running */
     volatile int cancel;
     volatile int stopped;
+    volatile int closing; /* QUIT was queued: no new work may enter */
+    volatile int started;
     volatile astro_action running;
     uint8_t *image;
 } worker;
@@ -36,7 +38,17 @@ static int is_foreground(astro_action action)
 
 int astro_busy(void)
 {
-    return worker.busy;
+    if (!worker.started || !worker.lock) {
+        return 0;
+    }
+    /* The callback may run while a producer holds the lock. Treat that
+     * short interval as busy instead of reading unsynchronized flags. */
+    if (take_semaphore_now(worker.lock) != 0) {
+        return 1;
+    }
+    int busy = worker.busy || worker.closing;
+    give_semaphore(worker.lock);
+    return busy;
 }
 
 astro_action astro_running_action(void)
@@ -46,7 +58,9 @@ astro_action astro_running_action(void)
 
 void astro_cancel(void)
 {
-    worker.cancel = 1;
+    if (worker.started) {
+        worker.cancel = 1;
+    }
 }
 
 int astro_cancel_requested(void)
@@ -63,14 +77,28 @@ int astro_request(astro_action action)
 {
     int accepted = 0;
 
-    take_semaphore(worker.lock, 0);
-    if (action == ASTRO_ACTION_QUIT || (is_foreground(action) && !worker.busy) ||
-        (!is_foreground(action) && !worker.pending)) {
+    /* Never call DryOS with an invalid queue/semaphore ID. Unknown enum
+     * values must not silently reach the worker as background actions. */
+    if (!worker.started || !worker.lock || !worker.queue ||
+        action <= ASTRO_ACTION_NONE || action > ASTRO_ACTION_QUIT) {
+        return 0;
+    }
+    if (take_semaphore(worker.lock, 0) != 0) {
+        return 0;
+    }
+    if (!worker.closing &&
+        (action == ASTRO_ACTION_QUIT ||
+         (is_foreground(action) && !worker.busy) ||
+         (!is_foreground(action) && !worker.pending))) {
         accepted = msg_queue_post(worker.queue, (uint32_t)action) == 0;
     }
     if (accepted) {
         worker.pending++;
-        if (is_foreground(action)) {
+        if (action == ASTRO_ACTION_QUIT) {
+            /* Prevent new requests from being posted *behind* QUIT. Those
+             * would be abandoned and could reference an unloaded module. */
+            worker.closing = 1;
+        } else if (is_foreground(action)) {
             worker.busy = 1;
             worker.cancel = 0;
         }
@@ -153,25 +181,52 @@ static void worker_task(void *unused)
 
 int astro_worker_start(void)
 {
+    if (worker.started) {
+        return 0;
+    }
+    /* DryOS treats low-bit-set IDs as errors. Test before any wait/post:
+     * invalid queue IDs can otherwise cause assertions on the camera. */
     worker.lock = create_named_semaphore("astro_lock", 1);
+    if (!worker.lock || ((uintptr_t)worker.lock & 1u)) {
+        worker.lock = NULL;
+        return 0;
+    }
     worker.queue = (struct msg_queue *)msg_queue_create("astro_queue", QUEUE_LENGTH);
+    if (!worker.queue || ((uintptr_t)worker.queue & 1u)) {
+        worker.queue = NULL;
+        return 0;
+    }
     worker.stopped = 0;
-    return worker.lock && worker.queue &&
-           task_create("astro_worker", TASK_PRIORITY, TASK_STACK, worker_task, 0);
+    worker.closing = 0;
+    worker.cancel = 0;
+    worker.busy = 0;
+    worker.pending = 0;
+    worker.running = ASTRO_ACTION_NONE;
+    worker.started = 1;
+    uint32_t task_id = task_create("astro_worker", TASK_PRIORITY, TASK_STACK, worker_task, 0);
+    if (!task_id || (task_id & 1u)) {
+        worker.started = 0;
+        return 0;
+    }
+    return 1;
 }
 
 int astro_worker_stop(void)
 {
-    if (worker.busy || !astro_request(ASTRO_ACTION_QUIT)) {
+    if (!worker.started || worker.busy) {
+        return 0;
+    }
+    if (!worker.closing && !astro_request(ASTRO_ACTION_QUIT)) {
         return 0;
     }
     for (int waited = 0; !worker.stopped && waited < STOP_TIMEOUT_MS; waited += 50) {
         msleep(50);
     }
     if (!worker.stopped) {
-        return 0;
+        return 0; /* fail closed: never unload code while its task runs */
     }
     free(worker.image);
     worker.image = NULL;
+    worker.started = 0;
     return 1;
 }
