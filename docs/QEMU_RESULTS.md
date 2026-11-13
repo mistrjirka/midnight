@@ -1,5 +1,10 @@
 # Canon 600D QEMU acceptance results
 
+
+> **Historical reference:** The procedures and results below were recorded
+> with the earlier monolithic Midnight module. For the AstroML-based migration,
+> see [modular migration review](MODULAR_MIGRATION.md).
+
 The original `IMG_7975.CR2` and `IMG_6446.CR2` passed the compiled ARM solver in Canon EOS 600D firmware 1.0.2. No pointing or image-scale hints were supplied. The generic index was built only from HYG star data.
 
 | Frame | Stars | RA degrees | Dec degrees | Previous fresh-card repeat | Release-source rerun |

@@ -1,57 +1,76 @@
 #!/usr/bin/env bash
+# Reproducible Midnight 600D/6D build with the modular AstroML-derived code.
 set -euo pipefail
-MIDNIGHT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-WORKROOT="$MIDNIGHT_ROOT/.build"
-UPSTREAM_SHA="142472e95054d73640f50789ac0fd66325499d82"
-OPENNGC_SHA="be3cd6c5498806a2fbb2f7e0452ef802dbb02be0"
-D3_CELESTIAL_SHA="7e720a3de062059d4c5400a379146a601d9010e0"
-ML_ROOT="$WORKROOT/magiclantern"
-mkdir -p "$WORKROOT" "$MIDNIGHT_ROOT/dist"
-if [[ ! -d "$ML_ROOT/.git" ]]; then
-  git clone --no-checkout --filter=blob:none https://github.com/reticulatedpines/magiclantern_simplified.git "$ML_ROOT"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+ML="$ROOT/.build/magiclantern"
+PIN="142472e95054d73640f50789ac0fd66325499d82"
+PYTHON="${PYTHON:-python3}"
+JOBS="${JOBS:-8}"
+mkdir -p "$ROOT/.build" "$ROOT/dist"
+if [[ ! -e "$ML/.git" ]]; then
+    git clone --no-checkout --filter=blob:none \
+        https://github.com/reticulatedpines/magiclantern_simplified.git "$ML"
 fi
-git -C "$ML_ROOT" fetch --depth 1 origin "$UPSTREAM_SHA"
-git -C "$ML_ROOT" checkout --force --detach "$UPSTREAM_SHA"
-git -C "$ML_ROOT" clean -ffdqx
-cp -a "$MIDNIGHT_ROOT/modules/astro" "$ML_ROOT/modules/"
-git -C "$ML_ROOT" apply --check "$MIDNIGHT_ROOT/integration.patch"
-git -C "$ML_ROOT" apply "$MIDNIGHT_ROOT/integration.patch"
-mkdir -p "$ML_ROOT/.astro-data"
-fetch() { curl --fail --location --retry 3 --silent --show-error --output "$ML_ROOT/.astro-data/$1" "$2"; }
-fetch hygdata_v41.csv https://raw.githubusercontent.com/astronexus/HYG-Database/main/hyg/CURRENT/hygdata_v41.csv
-fetch NGC.csv "https://raw.githubusercontent.com/mattiaverga/OpenNGC/$OPENNGC_SHA/database_files/NGC.csv"
-fetch addendum.csv "https://raw.githubusercontent.com/mattiaverga/OpenNGC/$OPENNGC_SHA/database_files/addendum.csv"
-fetch constellations.lines.json "https://raw.githubusercontent.com/ofrohn/d3-celestial/$D3_CELESTIAL_SHA/data/constellations.lines.json"
-fetch constellations.json "https://raw.githubusercontent.com/ofrohn/d3-celestial/$D3_CELESTIAL_SHA/data/constellations.json"
-(
-  cd "$ML_ROOT"
-  python3 modules/astro/tools/make_catalog.py .astro-data/hygdata_v41.csv .astro-data/STARS.BIN
-  python3 modules/astro/tools/make_sky_index.py
-  python3 modules/astro/tools/make_sky_index.py --wide
-  python3 modules/astro/tools/make_dso.py .astro-data .astro-data/DSO.BIN
-  python3 modules/astro/tools/make_constellations.py .astro-data/constellations.lines.json .astro-data/constellations.json .astro-data/CONST.BIN
-  python3 modules/astro/tests/test_focus.py
-  python3 modules/astro/tests/test_faults.py
-  python3 modules/astro/tests/test_shortcut.py
-  python3 modules/astro/tests/test_gain_menu.py
-  python3 modules/astro/tests/test_gallery_input.py
-  python3 modules/astro/tests/test_liveview_entry.py
-  python3 modules/astro/tests/test_solver.py .astro-data/STARS.BIN
-  # The synthetic grayscale TEST.PGM is created by test_solver.py.
-  python3 modules/astro/tests/test_gallery_capture.py
-  python3 modules/astro/tests/test_streak.py .astro-data/TEST.PGM
-  python3 modules/astro/tests/test_psf.py
-  python3 modules/astro/tests/test_catalog_index.py .astro-data/STARS.BIN
-  python3 modules/astro/tests/test_star_labels.py .astro-data/STARS.BIN
-  (cd modules/astro/tests && python3 test_wcs.py && python3 test_dso_catalog.py && python3 test_overlay_scene.py &&
-   python3 test_sky_solver.py --trials 6 --focals 24,35,50,85,135 --hint)
-  make -C modules -j4
-  make -C platform/600D.102 -j4
-  make -C platform/6D.116 -j4
-  python3 modules/astro/tools/package.py 600D.102 .astro-data/STARS.BIN
-  python3 modules/astro/tools/package.py 6D.116 .astro-data/STARS.BIN
-  python3 modules/astro/tools/package.py --wide-index .astro-data/STARS.BIN
-)
-cp "$ML_ROOT"/dist/magiclantern-astro-*.zip "$MIDNIGHT_ROOT/dist/"
-sha256sum "$MIDNIGHT_ROOT"/dist/magiclantern-astro-*.zip
-echo "Experimental firmware packages ready in $MIDNIGHT_ROOT/dist"
+git -C "$ML" fetch --depth 1 origin "$PIN"
+git -C "$ML" checkout --force --detach "$PIN"
+git -C "$ML" clean -ffdqx
+cp -a "$ROOT/modules/astro" "$ML/modules/"
+git -C "$ML" apply --check "$ROOT/integration.patch"
+git -C "$ML" apply "$ROOT/integration.patch"
+
+# Regenerate the star index when the label IDs or sky layout change.
+export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
+"$PYTHON" - <<'PY'
+from pathlib import Path
+import os, shutil
+from tools.data import sources, catalog, dso, constellations, sky_index
+from tools import paths
+
+data=paths.DATA
+data.mkdir(parents=True,exist_ok=True)
+sources.fetch(data)
+catalog.build(data/"hygdata_v41.csv",data/"STARS.BIN")
+dso.build(data, paths.SOURCES/"barnard_VII_220A.dat",
+          paths.SOURCES/"sharpless_VII_20.dat",data/"DSO.BIN")
+constellations.build(data/"constellations.lines.json",
+                     data/"constellations.json",data/"CONST.BIN")
+jobs=max(1,min(8,os.cpu_count() or 1))
+sky_index.build(data/"STARS.BIN",data,"SKY",False,"polar",jobs)
+sky_index.build(data/"STARS.BIN",data,"SKYW",True,"polar",jobs)
+ref=data/"reference";ref.mkdir(parents=True,exist_ok=True)
+for n in ("STARS.BIN","STARS.IDX","STARS.NAM",
+          "DSO.BIN","DSO.KEY","DSO.NAM","CONST.BIN"):
+    shutil.copy2(data/n,ref/n)
+sky_index.build(ref/"STARS.BIN",ref,"SKY",False,"midnight",jobs)
+PY
+
+export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+"$PYTHON" -m pytest -q -m "not slow" "$ROOT/tests"
+if [[ "${RUN_SLOW_TESTS:-0}" == "1" ]]; then
+    "$PYTHON" -m pytest -q -m slow "$ROOT/tests"
+fi
+
+make -C "$ML/modules" -j"$JOBS"
+make -C "$ML/platform/600D.102" -j"$JOBS"
+make -C "$ML/platform/6D.116" -j"$JOBS"
+
+# A portable ARM module must import symbols exported by BOTH firmware builds.
+for camera in 600D.102 6D.116; do
+    case "$camera" in
+        600D.102) sym="$ML/platform/$camera/build/600D_102.sym";;
+        6D.116) sym="$ML/platform/$camera/build/6D_116.sym";;
+    esac
+    missing="$(comm -23 <(sort -u "$ML/modules/astro/build/astro.dep") \
+                           <(awk '{print $2}' "$sym" | sort -u))"
+    if [[ -n "$missing" ]]; then
+        echo "Missing $camera firmware symbols:" >&2
+        echo "$missing" >&2
+        exit 1
+    fi
+    echo "$camera: all module symbols resolved"
+done
+
+"$PYTHON" "$ROOT/scripts/package_firmware.py" --data "$ROOT/.astro-data" \
+    --ml "$ML" --output "$ROOT/dist"
+sha256sum "$ROOT"/dist/*.zip
+echo "Experimental Midnight firmware and module-only updates verified."

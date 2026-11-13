@@ -1,13 +1,15 @@
-Astro
-=====
+AstroML
+-------
 
-:Author: Experimental community module
-:Summary: Astronomy focus and sky solving
-:License: GPL-2.0-or-later
+:Author: AstroML contributors (derived from Midnight)
+:License: GPL-2.0-only
+:Summary: Plate solving, guiding, polar alignment, star focus
+:Forum: https://github.com/kubakubakuba/AstroML
 
-Experimental 600D/6D module. Not hardware tested.
-Use Play > Q > SET to solve a displayed photo preview.
-Results show RA/Dec in degrees with matched star names.
-LiveView solving waits 3s before reading the sensor.
-Still requires a rough RA/Dec hint, not blind solving.
-More details in docs/USAGE.rst.
+Astronomy tools for the Canon 600D (firmware 1.0.2) and 6D (1.1.6).
+
+Blind plate solving from Live View, a catalogue target picker
+with a Live View arrow, polar alignment from two solves, and
+star-size focusing. Needs the ML/ASTRO data files.
+
+Open Focus -> Midnight to access the astronomy controls.

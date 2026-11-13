@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "astroml"
+version = "0.1.0"
+description = "Host tooling for the Midnight modular Magic Lantern module (Canon 600D and 6D)"
+license = "GPL-2.0-only"
+requires-python = ">=3.10"
+dependencies = ["typer>=0.12", "numpy", "scipy", "pillow"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+astroml = "tools.cli:app"
+
+[tool.setuptools]
+packages = ["tools", "tools.data"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["slow: long statistical runs"]

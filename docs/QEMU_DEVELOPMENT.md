@@ -1,5 +1,10 @@
 # QEMU setup, recovery and publication guide
 
+
+> **Historical reference:** The procedures and results below were recorded
+> with the earlier monolithic Midnight module. For the AstroML-based migration,
+> see [modular migration review](MODULAR_MIGRATION.md).
+
 ## Find the existing environment first
 
 Use the **Development Sandbox** connector, list active sessions and reuse the `magic-lantern-astro` session. Do not recreate the project or confuse the conversation's temporary container with this persistent environment.
