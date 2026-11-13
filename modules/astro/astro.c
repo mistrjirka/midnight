@@ -47,11 +47,14 @@ static unsigned int astro_keypress(unsigned int key)
         }
         return 1;
     }
-    if (astro_busy() && key == MODULE_KEY_Q) {
-        astro_cancel();
+    /* The gallery may already show a result while the worker has not yet
+     * cleared busy. Let its Q handler dismiss the result before considering
+     * generic cancellation of the current operation. */
+    if (!astro_playback_key(key)) {
         return 0;
     }
-    if (!astro_playback_key(key)) {
+    if (astro_busy() && key == MODULE_KEY_Q) {
+        astro_cancel();
         return 0;
     }
     return astro_focus_key(key);

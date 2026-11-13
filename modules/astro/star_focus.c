@@ -77,9 +77,14 @@ static void format_metric(char *out, int size, int metric)
     snprintf(out, size, "%d.%02d", metric / 16, metric % 16 * 100 / 16);
 }
 
+static int io_cancelled(void *unused)
+{
+    return astro_cancel_requested();
+}
+
 void astro_focus_run_autofocus(void)
 {
-    astro_focus_io io = {NULL, io_ready, io_position, io_step, io_frame, io_sleep};
+    astro_focus_io io = {NULL, io_ready, io_position, io_step, io_frame, io_sleep, io_cancelled};
     astro_focus_result result;
     char metric[16];
 

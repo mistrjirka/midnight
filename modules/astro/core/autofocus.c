@@ -11,6 +11,7 @@
 #define MOTOR_SETTLE_MS  160
 #define CONFIRM_DELAY_MS 100
 #define SAMPLE_DELAY_MS  200
+#define CANCEL_POLL_MS    25
 #define LOCK_RADIUS      7
 #define MIN_IMPROVEMENT  2 /* metric units (1/16 px^2) needed to call it a change */
 #define MAX_LOST_FRAMES  1
@@ -54,9 +55,35 @@ const char *astro_focus_status_text(astro_focus_status status)
             return "Focus optimum at scan edge";
         case ASTRO_FOCUS_WEAK_CHANGE:
             return "No measurable focus change";
+        case ASTRO_FOCUS_ABORTED:
+            return "Focus cancelled; no further lens steps";
         default:
             return "Focus aborted";
     }
+}
+
+/* The UI and the worker must not wait on each other's semaphore during Q.
+ * Poll the optional cancellation callback in small sleep slices so we can
+ * stop before issuing the next Canon lens command. */
+static int cancelled(const focus_run *run)
+{
+    return run->io->cancelled && run->io->cancelled(run->io->context);
+}
+
+static astro_focus_status sleep_cancelable(focus_run *run, int milliseconds)
+{
+    if (cancelled(run)) {
+        return ASTRO_FOCUS_ABORTED;
+    }
+    while (milliseconds > 0) {
+        int step = milliseconds < CANCEL_POLL_MS ? milliseconds : CANCEL_POLL_MS;
+        run->io->sleep_ms(run->io->context, step);
+        if (cancelled(run)) {
+            return ASTRO_FOCUS_ABORTED;
+        }
+        milliseconds -= step;
+    }
+    return ASTRO_FOCUS_OK;
 }
 
 /* One motor step, confirmed by a change in reported position. */
@@ -65,20 +92,43 @@ static astro_focus_status step_checked(focus_run *run, int direction)
     const astro_focus_io *io = run->io;
     int before, after;
 
+    if (cancelled(run)) {
+        return ASTRO_FOCUS_ABORTED;
+    }
     if (!io->ready(io->context)) {
         return ASTRO_FOCUS_NO_LENS;
     }
     if (!io->position(io->context, &before)) {
         return ASTRO_FOCUS_NO_FEEDBACK;
     }
+    /* This check is as close as possible to the hardware command. A Canon
+     * PROP_LV_LENS_DRIVE_REMOTE command already in flight cannot safely be
+     * interrupted. Allow it to finish, then issue no additional commands. */
+    if (cancelled(run)) {
+        return ASTRO_FOCUS_ABORTED;
+    }
     if (!io->step(io->context, direction, run->speed)) {
         return ASTRO_FOCUS_MOTOR_FAILED;
     }
     run->result->commands++;
 
+    if (cancelled(run)) {
+        /* The command may have moved the lens during the firmware wait.
+         * Record its reported final position, but never attempt to rewind. */
+        if (io->position(io->context, &after)) {
+            run->result->final_position = after;
+            if (after != before) {
+                run->position += direction;
+            }
+        }
+        return ASTRO_FOCUS_ABORTED;
+    }
     for (int attempt = 0; attempt < 2; attempt++) {
-        if (attempt) {
-            io->sleep_ms(io->context, MOTOR_SETTLE_MS);
+        if (attempt && sleep_cancelable(run, MOTOR_SETTLE_MS) != ASTRO_FOCUS_OK) {
+            return ASTRO_FOCUS_ABORTED;
+        }
+        if (cancelled(run)) {
+            return ASTRO_FOCUS_ABORTED;
         }
         if (!io->ready(io->context)) {
             return ASTRO_FOCUS_NO_LENS;
@@ -89,7 +139,7 @@ static astro_focus_status step_checked(focus_run *run, int direction)
         if (after != before) {
             run->position += direction;
             run->result->final_position = after;
-            return ASTRO_FOCUS_OK;
+            return cancelled(run) ? ASTRO_FOCUS_ABORTED : ASTRO_FOCUS_OK;
         }
     }
     return ASTRO_FOCUS_NOT_MOVING;
@@ -98,12 +148,15 @@ static astro_focus_status step_checked(focus_run *run, int direction)
 static astro_focus_status move_to(focus_run *run, int target)
 {
     while (run->position != target) {
+        if (cancelled(run)) {
+            return ASTRO_FOCUS_ABORTED;
+        }
         astro_focus_status status = step_checked(run, run->position < target ? 1 : -1);
         if (status != ASTRO_FOCUS_OK) {
             return status;
         }
     }
-    return ASTRO_FOCUS_OK;
+    return cancelled(run) ? ASTRO_FOCUS_ABORTED : ASTRO_FOCUS_OK;
 }
 
 static astro_focus_status measure_locked(focus_run *run, int *metric)
@@ -112,11 +165,17 @@ static astro_focus_status measure_locked(focus_run *run, int *metric)
     int x = run->star_x;
     int y = run->star_y;
 
+    if (cancelled(run)) {
+        return ASTRO_FOCUS_ABORTED;
+    }
     if (!io->ready(io->context)) {
         return ASTRO_FOCUS_NO_LENS;
     }
     if (!io->frame(io->context, run->pixels, run->width, run->height)) {
         return ASTRO_FOCUS_NO_FRAME;
+    }
+    if (cancelled(run)) {
+        return ASTRO_FOCUS_ABORTED;
     }
     *metric = astro_focus_metric_locked(run->pixels, run->width, run->height, run->width, &x, &y,
                                         LOCK_RADIUS);
@@ -128,14 +187,22 @@ static astro_focus_status acquire_star(focus_run *run, int *baseline)
 {
     const astro_focus_io *io = run->io;
 
+    if (cancelled(run)) {
+        return ASTRO_FOCUS_ABORTED;
+    }
     if (!io->frame(io->context, run->pixels, run->width, run->height)) {
         return ASTRO_FOCUS_NO_FRAME;
+    }
+    if (cancelled(run)) {
+        return ASTRO_FOCUS_ABORTED;
     }
     if (astro_focus_metric(run->pixels, run->width, run->height, run->width, &run->star_x,
                            &run->star_y) < 0) {
         return ASTRO_FOCUS_NO_STAR;
     }
-    io->sleep_ms(io->context, CONFIRM_DELAY_MS);
+    if (sleep_cancelable(run, CONFIRM_DELAY_MS) != ASTRO_FOCUS_OK) {
+        return ASTRO_FOCUS_ABORTED;
+    }
     astro_focus_status status = measure_locked(run, baseline);
     return status == ASTRO_FOCUS_STAR_LOST ? ASTRO_FOCUS_NO_STAR : status;
 }
@@ -155,7 +222,10 @@ static astro_focus_status scan(focus_run *run, int radius, int *best, int *best_
         if (status != ASTRO_FOCUS_OK) {
             return status;
         }
-        run->io->sleep_ms(run->io->context, SAMPLE_DELAY_MS);
+        status = sleep_cancelable(run, SAMPLE_DELAY_MS);
+        if (status != ASTRO_FOCUS_OK) {
+            return status;
+        }
         status = measure_locked(run, &metric);
         if (status == ASTRO_FOCUS_STAR_LOST && ++lost <= MAX_LOST_FRAMES) {
             continue;
@@ -194,6 +264,9 @@ astro_focus_status astro_run_autofocus(const astro_focus_io *io, uint8_t *pixels
     }
     memset(out, 0, sizeof(*out));
     if (!valid_request(io, pixels, width, height, radius, speed)) {
+        goto finished;
+    }
+    if (cancelled(&run)) {
         goto finished;
     }
     if (!io->ready(io->context)) {
@@ -238,6 +311,9 @@ astro_focus_status astro_run_autofocus(const astro_focus_io *io, uint8_t *pixels
     }
 
 finished:
+    if (status == ASTRO_FOCUS_OK && cancelled(&run)) {
+        status = ASTRO_FOCUS_ABORTED;
+    }
     out->status = status;
     return status;
 }

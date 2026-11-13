@@ -99,6 +99,11 @@ void astro_run_solve(int from_test_file)
         fail_with_log();
         return;
     }
+    if (astro_cancel_requested()) {
+        astro_set_status("Cancelled by Q");
+        fail_with_log();
+        return;
+    }
     if (!astro_result_keep_frame(image)) {
         astro_set_status("Out of RAM for the result view");
         fail_with_log();
@@ -107,6 +112,11 @@ void astro_run_solve(int from_test_file)
 
     astro_solve_status status = astro_solve_frame(image, SOLVE_BUDGET_MS, &result);
     astro_solve_release();
+    if (astro_cancel_requested()) {
+        astro_set_status("Cancelled by Q");
+        fail_with_log();
+        return;
+    }
     if (status != ASTRO_SOLVE_OK) {
         astro_set_status("%s (%d stars)", astro_solve_status_text(status), result.star_count);
         fail_with_log();
