@@ -2,7 +2,7 @@
 
 Astronomy tools for **Magic Lantern on Canon 600D (1.0.2) and 6D (1.1.6)**.
 
-[Current experimental release: v0.3.1-alpha.1](https://github.com/mistrjirka/midnight/releases/tag/v0.3.1-alpha.1)
+[Experimental modular release: v0.4.0-alpha.1](https://github.com/mistrjirka/midnight/releases/tag/v0.4.0-alpha.1)
 
 ## Features
 

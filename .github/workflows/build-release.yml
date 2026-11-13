@@ -36,7 +36,7 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          sha256sum dist/magiclantern-astro-*.zip > dist/SHA256SUMS.txt
+          sha256sum dist/*.zip > dist/SHA256SUMS.txt
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Refusing to overwrite an existing release: $tag" >&2
             exit 1
