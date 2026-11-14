@@ -6,8 +6,10 @@
 #include <stdint.h>
 #include "reader.h"
 
-/* Catalogue IDs, shared with tools/data/dso.py. Also the picker order. */
+/* Catalogue IDs, shared with tools/data/dso.py. Also the picker order.
+ * Zero is reserved for a deliberately unselected target. */
 enum {
+    ASTRO_CAT_NONE = 0,
     ASTRO_CAT_M = 1,
     ASTRO_CAT_NGC,
     ASTRO_CAT_IC,

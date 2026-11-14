@@ -11,12 +11,13 @@ from datetime import date
 from hashlib import sha256
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
+from cameras import load_cameras
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = ("STARS.BIN", "STARS.IDX", "STARS.NAM", "SKY.DIR",
             "SKY.PAT", "SKY.FLD", "DSO.BIN", "DSO.KEY", "DSO.NAM", "CONST.BIN")
 WIDE = ("SKYW.DIR", "SKYW.PAT", "SKYW.FLD")
-CAMERAS = ('550D.109', '600D.102', '650D.104', '700D.115', '100D.101', '60D.111', '1100D.105', '70D.112', '6D.116')
+# Camera variants are read from the same manifest as firmware.
 
 CREDITS = """Midnight astronomy module (GPL-2.0-only combined work).
 Ported architecture by AstroML contributors from kubakubakuba/AstroML.
@@ -99,7 +100,8 @@ def main()->None:
     a=p.parse_args()
     module=a.ml/"modules/astro/build/astro.mo"
     assert module.is_file()
-    for cam in CAMERAS:
+    for camera in load_cameras():
+        cam = camera.platform
         base=a.ml/f"platform/{cam}/build/magiclantern.zip"
         assert base.is_file()
         package_all(a.data,base,module,a.output/f"magiclantern-astro-{cam}.zip",cam)

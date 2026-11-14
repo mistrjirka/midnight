@@ -12,8 +12,9 @@
 
 CONFIG_INT("astro.focal_src", astro_cfg_focal_source, ASTRO_FOCAL_BLIND);
 CONFIG_INT("astro.focal_mm", astro_cfg_focal_mm, 50);
-CONFIG_INT("astro.tgt_cat", astro_cfg_target_catalogue, ASTRO_CAT_M);
-CONFIG_INT("astro.tgt_num", astro_cfg_target_number, 42);
+/* Fresh cards start with no target, preserving stored selections on existing cards. */
+CONFIG_INT("astro.tgt_cat", astro_cfg_target_catalogue, ASTRO_CAT_NONE);
+CONFIG_INT("astro.tgt_num", astro_cfg_target_number, 1);
 CONFIG_INT("astro.tgt_on", astro_cfg_mark_target, 1);
 CONFIG_INT("astro.ov_stars", astro_cfg_overlay_stars, 1);
 CONFIG_INT("astro.ov_dso", astro_cfg_overlay_dso, 1);
@@ -78,19 +79,6 @@ int astro_status_recent(void)
 const char *astro_status(void)
 {
     return status_text;
-}
-
-int astro_sensor_width_x10(void)
-{
-    return is_camera("550D", "1.0.9") ? ASTRO_550D_SENSOR_WIDTH_X10
-         : is_camera("600D", "1.0.2") ? ASTRO_600D_SENSOR_WIDTH_X10
-         : is_camera("650D", "1.0.4") ? ASTRO_650D_SENSOR_WIDTH_X10
-         : is_camera("700D", "1.1.5") ? ASTRO_700D_SENSOR_WIDTH_X10
-         : is_camera("100D", "1.0.1") ? ASTRO_100D_SENSOR_WIDTH_X10
-         : is_camera("60D", "1.1.1") ? ASTRO_60D_SENSOR_WIDTH_X10
-         : is_camera("1100D", "1.0.5") ? ASTRO_1100D_SENSOR_WIDTH_X10
-         : is_camera("70D", "1.1.2") ? ASTRO_70D_SENSOR_WIDTH_X10
-         : is_camera("6D", "1.1.6") ? ASTRO_6D_SENSOR_WIDTH_X10 : 0;
 }
 
 int astro_hint_focal_mm(void)

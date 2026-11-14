@@ -9,7 +9,7 @@ Astronomy tools for **Magic Lantern on nine Canon EOS cameras**: 100D, 550D, 600
 | Feature | Function |
 |---|---|
 | Plate solving | Identifies sky coordinates without pointing hints. Optional focal-length hints speed up solving |
-| Target guiding | Finds M, NGC, IC, Caldwell, Barnard and Sharpless objects. Draws an arrow or outline |
+| Target guiding | Optional: starts unset. Select an M, NGC, IC, Caldwell, Barnard or Sharpless object to show its marker or guiding arrow |
 | Polar alignment | Uses two sky solutions about the RA axis, then guides mount adjustment |
 | Sky annotations | Star names, constellations, and oriented deep-sky outlines |
 | Manual star focus | Size score at 5x/10x Live View |
@@ -18,6 +18,10 @@ Astronomy tools for **Magic Lantern on nine Canon EOS cameras**: 100D, 550D, 600
 | Timed shooting | Original Magic Lantern intervalometer and Bulb Timer links |
 
 Open **Trash/Delete → Focus → Midnight**.
+
+**Target guidance is optional.** New installations start with no target. Choose **Target → Catalogue** and **Number** to activate an arrow or marker. Choose **None** to clear the target. Existing saved selections are preserved.
+
+[Architecture review](docs/ARCHITECTURE_AUDIT.md).
 
 ## 600D emulation
 
