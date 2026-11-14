@@ -16,21 +16,13 @@
 
 static unsigned int astro_init(void)
 {
-    if (!is_camera("550D", "1.0.9") &&
-        !is_camera("600D", "1.0.2") &&
-        !is_camera("650D", "1.0.4") &&
-        !is_camera("700D", "1.1.5") &&
-        !is_camera("100D", "1.0.1") &&
-        !is_camera("60D", "1.1.1") &&
-        !is_camera("1100D", "1.0.5") &&
-        !is_camera("70D", "1.1.2") &&
-        !is_camera("6D", "1.1.6")) {
+    const astro_camera_profile *camera = astro_camera_detect();
+    if (!camera) {
         return CBR_RET_ERROR;
     }
-    /* The legacy focus shortcut only exists on 600D DISP and 6D LCD-light.
-     * Disable it on the other models. Never intercept an unverified raw key.
-     * Explicit INFO or half-shutter options remain available. */
-    if (!is_camera("600D", "1.0.2") && !is_camera("6D", "1.1.6") &&
+    /* The legacy special-button shortcut only exists on two cameras.
+     * Keep explicit INFO or half-shutter choices on other bodies. */
+    if (camera->raw_focus_key == ASTRO_FOCUS_KEY_NONE &&
         astro_cfg_focus_shortcut == ASTRO_SHORTCUT_LIGHT) {
         astro_cfg_focus_shortcut = ASTRO_SHORTCUT_OFF;
     }

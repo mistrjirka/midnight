@@ -5,28 +5,18 @@ import subprocess
 import tempfile
 
 ROOT=Path(__file__).resolve().parents[1]
-MENU=(ROOT/"modules/astro/menu.c").read_text()
+MENU=(ROOT/"modules/astro/menu_handlers.c").read_text()
 SETTLE=(ROOT/"modules/astro/solve_actions.c").read_text()
-STATE=(ROOT/"modules/astro/state.c").read_text()
-start=MENU[MENU.index("static MENU_SELECT_FUNC(start_solve_liveview)"):
-           MENU.index("static MENU_SELECT_FUNC(start_solve_file)")]
+start=MENU[MENU.index("MENU_SELECT_FUNC(astro_menu_start_solve_liveview)"):
+           MENU.index("MENU_SELECT_FUNC(astro_menu_start_solve_file)")]
 settle=SETTLE[SETTLE.index("static int settle(void)"):SETTLE.index("static int capture(",SETTLE.index("static int settle(void)"))]
-specs=STATE[STATE.index("int astro_sensor_width_x10(void)"):STATE.index("int astro_hint_focal_mm(void)")]
 STUBS=r"""
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
-#define ASTRO_550D_SENSOR_WIDTH_X10 223
-#define ASTRO_600D_SENSOR_WIDTH_X10 223
-#define ASTRO_650D_SENSOR_WIDTH_X10 223
-#define ASTRO_700D_SENSOR_WIDTH_X10 223
-#define ASTRO_100D_SENSOR_WIDTH_X10 223
-#define ASTRO_60D_SENSOR_WIDTH_X10 223
-#define ASTRO_1100D_SENSOR_WIDTH_X10 220
-#define ASTRO_70D_SENSOR_WIDTH_X10 225
-#define ASTRO_6D_SENSOR_WIDTH_X10 358
+#include "camera.h"
 #define ASTRO_ACTION_SOLVE_LIVEVIEW 2
 #define SETTLE_MS 3000
 #define SETTLE_STEP_MS 100
@@ -34,7 +24,7 @@ STUBS=r"""
 static int model,lv,movie,zoom,playback,requests,notifications,cancel;
 static int change_after=-1,elapsed;
 static char last_status[128];
-static int is_camera(const char *name,const char *firmware){
+int is_camera(const char *name,const char *firmware){
  if(!strcmp(name,"550D")&&!strcmp(firmware,"1.0.9"))return model==3;
  if(!strcmp(name,"600D")&&!strcmp(firmware,"1.0.2"))return model==1;
  if(!strcmp(name,"650D")&&!strcmp(firmware,"1.0.4"))return model==5;
@@ -68,9 +58,10 @@ WRAPPERS=r"""
 void reset(int m,int live,int video,int size,int play){
  model=m;lv=live;movie=video;zoom=size;playback=play;
  requests=notifications=cancel=elapsed=0;change_after=-1;last_status[0]=0;
+ astro_camera_detect();
 }
 int sensor(void){return astro_sensor_width_x10();}
-void click(void){start_solve_liveview(NULL);}
+void click(void){astro_menu_start_solve_liveview(NULL);}
 int stabilized(void){return settle();}
 void change_at(int ms){change_after=ms;}
 void set_cancel(int x){cancel=x;}
@@ -79,11 +70,14 @@ const char *status(void){return last_status;}
 """
 def test_camera_liveview():
     with tempfile.TemporaryDirectory(prefix="midnight-lv-") as tmp:
-        src=Path(tmp)/"lv.c";src.write_text(STUBS+specs+start+settle+WRAPPERS)
+        src=Path(tmp)/"lv.c";src.write_text(STUBS+start+settle+WRAPPERS)
+        (Path(tmp)/"module.h").write_text("int is_camera(const char*, const char*);\n")
         out=Path(tmp)/"lv.so"
         subprocess.run(["gcc","-shared","-fPIC","-O2","-std=c99",
                         "-Wall","-Wextra","-Werror","-Wno-unused-function",
-                        "-Wno-unused-parameter",str(src),"-o",str(out)],check=True)
+                        "-Wno-unused-parameter",f"-I{ROOT/'modules/astro'}",
+                        f"-I{tmp}",str(src),str(ROOT/"modules/astro/camera.c"),
+                        "-o",str(out)],check=True)
         lib=C.CDLL(str(out))
         lib.reset.argtypes=[C.c_int]*5
         lib.sensor.restype=C.c_int

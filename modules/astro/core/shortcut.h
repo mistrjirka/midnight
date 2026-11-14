@@ -3,9 +3,7 @@
 #ifndef ASTRO_SHORTCUT_H
 #define ASTRO_SHORTCUT_H
 
-/* Special raw shortcut: only 600D DISP or 6D LCD-light is verified. */
-#define ASTRO_KEY_600D_DISP 0x08
-#define ASTRO_KEY_6D_LIGHT  0x20
+/* The caller verifies the physical key against the camera profile first. */
 
 typedef enum {
     ASTRO_SHORTCUT_PASS = 0, /* let Canon handle the key */
@@ -21,6 +19,6 @@ typedef struct {
     int electronic_af; /* an AF lens that accepts focus commands */
 } astro_shortcut_state;
 
-astro_shortcut_action astro_shortcut_decide(int raw_key, const astro_shortcut_state *state);
+astro_shortcut_action astro_shortcut_decide(const astro_shortcut_state *state);
 
 #endif

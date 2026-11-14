@@ -18,6 +18,9 @@ static struct {
 
 int astro_target_current(void)
 {
+    if (astro_cfg_target_catalogue == ASTRO_CAT_NONE) {
+        return 1; /* the menu renders None immediately, without a lookup */
+    }
     if (loaded.catalogue == astro_cfg_target_catalogue &&
         loaded.number == astro_cfg_target_number) {
         return 1;
@@ -64,6 +67,15 @@ void astro_target_lookup(void)
     int catalogue = astro_cfg_target_catalogue;
     int number = astro_cfg_target_number;
 
+    if (catalogue == ASTRO_CAT_NONE) {
+        /* Clearing selection must also clear the previously loaded object.
+         * Do this on the worker, where catalogue state is normally written. */
+        memset(&loaded.target, 0, sizeof(loaded.target));
+        snprintf(loaded.info, sizeof(loaded.info), "None");
+        loaded.catalogue = ASTRO_CAT_NONE;
+        loaded.number = number;
+        return;
+    }
     if (loaded.catalogue == catalogue && loaded.number == number) {
         return;
     }
@@ -84,6 +96,7 @@ void astro_build_overlay(const astro_solve_result *result, astro_scene *scene)
 
     astro_target_lookup();
     const astro_target *target =
+        astro_cfg_target_catalogue != ASTRO_CAT_NONE &&
         astro_cfg_mark_target && loaded.target.valid ? &loaded.target : NULL;
     astro_catalogue_open(&c);
     if (astro_build_scene(&result->sky.wcs, ASTRO_IMAGE_WIDTH, ASTRO_IMAGE_HEIGHT, &opts, target,

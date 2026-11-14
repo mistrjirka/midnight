@@ -190,7 +190,7 @@ unsigned int astro_focus_key(unsigned int key)
     return 1;
 }
 
-/* Only 600D DISP and 6D LCD-light are verified raw shortcuts. */
+/* Dispatch only the raw focus key explicitly verified in the camera profile. */
 unsigned int astro_focus_raw_key(unsigned int event_pointer)
 {
     struct event *event = (struct event *)(uintptr_t)event_pointer;
@@ -198,20 +198,14 @@ unsigned int astro_focus_raw_key(unsigned int event_pointer)
     if (astro_cfg_focus_shortcut != ASTRO_SHORTCUT_LIGHT || !event || event->type != 0) {
         return 1;
     }
-    int key = event->param;
-    if (is_camera("600D", "1.0.2")) {
-        if (key != ASTRO_KEY_600D_DISP) {
-            return 1;
-        }
-        /* Feed the common policy a camera-neutral special-button event. */
-        key = ASTRO_KEY_6D_LIGHT;
-    } else if (!is_camera("6D", "1.1.6")) {
-        /* Never intercept unverified buttons or touch events. */
-        return 1;
+    const astro_camera_profile *camera = astro_camera_current();
+    if (!camera || camera->raw_focus_key == ASTRO_FOCUS_KEY_NONE ||
+        event->param != camera->raw_focus_key) {
+        return 1; /* never intercept unsupported buttons or touchscreen events */
     }
     astro_shortcut_state state = {1, lv && !is_movie_mode() && display_idle(), gui_menu_shown(),
                                   astro_busy(), astro_focus_lens_ready()};
-    astro_shortcut_action action = astro_shortcut_decide(key, &state);
+    astro_shortcut_action action = astro_shortcut_decide(&state);
     if (action == ASTRO_SHORTCUT_AUTOFOCUS) {
         astro_request(ASTRO_ACTION_AUTOFOCUS);
     } else if (action == ASTRO_SHORTCUT_TOGGLE_READOUT) {

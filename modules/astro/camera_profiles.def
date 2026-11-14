@@ -1,0 +1,15 @@
+/* Single camera registry used by the ARM module and build tools.
+ * Keep this format stable: ASTRO_CAMERA(model, firmware, sensor_width_x10,
+ *                                   raw_focus_key_or_minus_one, symbol_file).
+ * The raw focus key is a physical button code; -1 means no verified shortcut.
+ * Camera selection and sensor calculations must not replicate this list.
+ */
+ASTRO_CAMERA("550D", "1.0.9", 223, -1, "550D_109.sym")
+ASTRO_CAMERA("600D", "1.0.2", 223, 8, "600D_102.sym")
+ASTRO_CAMERA("650D", "1.0.4", 223, -1, "650D_104.sym")
+ASTRO_CAMERA("700D", "1.1.5", 223, -1, "700D_115.sym")
+ASTRO_CAMERA("100D", "1.0.1", 223, -1, "100D_101.sym")
+ASTRO_CAMERA("60D", "1.1.1", 223, -1, "60D_111.sym")
+ASTRO_CAMERA("1100D", "1.0.5", 220, -1, "t3_105.sym")
+ASTRO_CAMERA("70D", "1.1.2", 225, -1, "70D_112.sym")
+ASTRO_CAMERA("6D", "1.1.6", 358, 32, "6D_116.sym")

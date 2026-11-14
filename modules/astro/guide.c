@@ -72,7 +72,7 @@ void astro_guide_run(void)
     astro_live_stats stats;
 
     astro_target_lookup();
-    if (!astro_target_get()->valid) {
+    if (astro_cfg_target_catalogue == ASTRO_CAT_NONE || !astro_target_get()->valid) {
         astro_set_status("Pick a target first");
         return;
     }
