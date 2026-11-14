@@ -2,7 +2,8 @@
 /*
  * Mirrors ML's existing photo-only display gain instead of writing registers ourselves.
  * set_display_gain_equiv() is avoided on purpose: in movie mode it changes recorded ISO.
- * Both functions below are non-static in src/lv-img-engio.c and exported by the 6D build.
+ * Both functions below are exported by each supported firmware build.
+ * The build checks for their presence, including on the 550D.
  */
 #include <dryos.h>
 #include <propvalues.h>

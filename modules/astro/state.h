@@ -11,6 +11,7 @@
 #define ASTRO_IMAGE_BYTES  (ASTRO_IMAGE_WIDTH * ASTRO_IMAGE_HEIGHT)
 
 /* Sensor width in 0.1 mm. Select at runtime because ML modules are portable ARM objects. */
+#define ASTRO_550D_SENSOR_WIDTH_X10 223
 #define ASTRO_600D_SENSOR_WIDTH_X10 223
 #define ASTRO_6D_SENSOR_WIDTH_X10   358
 int astro_sensor_width_x10(void);

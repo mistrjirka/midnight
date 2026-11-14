@@ -15,6 +15,8 @@ First check your camera's **Firmware Ver.** in the Canon menu.
 | EOS 600D, **1.0.2** | [midnight-module-600D.102.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.0-alpha.1/midnight-module-600D.102.zip) | [magiclantern-astro-600D.102.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.0-alpha.1/magiclantern-astro-600D.102.zip) |
 | EOS 6D, **1.1.6** | [midnight-module-6D.116.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.0-alpha.1/midnight-module-6D.116.zip) | [magiclantern-astro-6D.116.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.0-alpha.1/magiclantern-astro-6D.116.zip) |
 
+**550D, firmware 1.0.9:** a new experimental port produces midnight-module-550D.109.zip and magiclantern-astro-550D.109.zip. These are **not** part of the v0.4.0-alpha.1 release. Download them from the successful 550D pull-request build artifact and consult the [550D port guide](550D_PORT.md) first.
+
 **Never install an archive for another camera or firmware version.** The *full* ZIP also carries camera-specific `autoexec.bin` and `ML-SETUP.FIR`. Use it only when you are setting up a compatible spare card and understand Magic Lantern's boot-card procedure.
 
 The optional [wide-field sky index](https://github.com/mistrjirka/midnight/releases/download/v0.4.0-alpha.1/magiclantern-astro-wide-index.zip) is only useful for very wide fields (roughly above 60°). You do not need it for most telescope lenses.

@@ -1,6 +1,6 @@
 # Midnight
 
-Astronomy tools for **Magic Lantern on Canon 600D (1.0.2) and 6D (1.1.6)**.
+Astronomy tools for **Magic Lantern on Canon 550D (1.0.9), 600D (1.0.2) and 6D (1.1.6)**.
 
 [Experimental modular release: v0.4.0-alpha.1](https://github.com/mistrjirka/midnight/releases/tag/v0.4.0-alpha.1) · [Installation and recovery guide](docs/INSTALL.md)
 
@@ -31,7 +31,7 @@ Its bundled synthetic sky solved with **11 matches in 0.19 s of emulator-reporte
 
 **Recommended:** update an existing compatible Magic Lantern card using the module-only ZIP. Back up the card, then extract the ZIP to the card root. Do not overwrite `autoexec.bin` when updating an existing Magic Lantern installation.
 
-See the [step-by-step installation, first tests and rollback guide](docs/INSTALL.md) for 600D/6D firmware versions and direct downloads.
+See the [installation and recovery guide](docs/INSTALL.md) for released 600D/6D builds. The **550D port is experimental** and is not in v0.4.0-alpha.1. See the [550D testing guide](docs/550D_PORT.md).
 
 ## Source
 
