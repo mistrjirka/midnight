@@ -84,7 +84,12 @@ int astro_sensor_width_x10(void)
 {
     return is_camera("550D", "1.0.9") ? ASTRO_550D_SENSOR_WIDTH_X10
          : is_camera("600D", "1.0.2") ? ASTRO_600D_SENSOR_WIDTH_X10
+         : is_camera("650D", "1.0.4") ? ASTRO_650D_SENSOR_WIDTH_X10
          : is_camera("700D", "1.1.5") ? ASTRO_700D_SENSOR_WIDTH_X10
+         : is_camera("100D", "1.0.1") ? ASTRO_100D_SENSOR_WIDTH_X10
+         : is_camera("60D", "1.1.1") ? ASTRO_60D_SENSOR_WIDTH_X10
+         : is_camera("1100D", "1.0.5") ? ASTRO_1100D_SENSOR_WIDTH_X10
+         : is_camera("70D", "1.1.2") ? ASTRO_70D_SENSOR_WIDTH_X10
          : is_camera("6D", "1.1.6") ? ASTRO_6D_SENSOR_WIDTH_X10 : 0;
 }
 

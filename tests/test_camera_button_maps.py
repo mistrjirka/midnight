@@ -39,6 +39,34 @@ BUTTONS = {
         0x4E: 1, 0x4F: 2, 0x6B: 35, 0x6C: 36,
         0x72: 37, 0x73: 38,
     },
+    "650D.104": {
+        0x1D: 29, 0x04: 9, 0x05: 10, 0x0B: 24,
+        0x07: 23, 0x0D: 25, 0x26: 16, 0x24: 15,
+        0x4E: 1, 0x4F: 2, 0x6B: 35, 0x6C: 36,
+        0x72: 37, 0x73: 38,
+    },
+    "100D.101": {
+        0x24: 29,  # Av acts as Magic Lantern's Q key on this body
+        0x04: 9, 0x05: 10, 0x0B: 24, 0x07: 23, 0x0D: 25,
+        0x28: 16, 0x26: 15, 0x50: 1, 0x51: 2,
+        0x6F: 35, 0x70: 36, 0x76: 37, 0x77: 38,
+    },
+    "60D.111": {
+        0x19: 29, 0x04: 9, 0x05: 10, 0x0B: 24,
+        0x07: 23, 0x0C: 25, 0x2A: 16, 0x26: 15,
+        0x41: 1, 0x42: 2,
+    },
+    "1100D.105": {
+        0x13: 29, 0x04: 9, 0x05: 10, 0x0B: 24,
+        0x07: 23, 0x0D: 25, 0x25: 16, 0x23: 15,
+        0x48: 1, 0x49: 2,
+    },
+    "70D.112": {
+        0x1D: 29, 0x04: 9, 0x05: 10, 0x0B: 24,
+        0x07: 23, 0x0D: 25, 0x34: 16, 0x30: 15,
+        0x50: 1, 0x51: 2, 0x6F: 35, 0x70: 36,
+        0x76: 37, 0x77: 38,
+    },
     "6D.116": {
         0x1D: 29, 0x04: 9, 0x05: 10, 0x0B: 24,
         0x07: 23, 0x0D: 25, 0x50: 1, 0x51: 2,
@@ -90,8 +118,13 @@ def test_real_magic_lantern_button_maps():
                 assert lib.translate(raw) == portable, (
                     f"{camera}: key 0x{raw:x} became {lib.translate(raw)}, expected {portable}"
                 )
-            if camera == "700D.115":
+            if camera in ("700D.115", "650D.104", "100D.101", "70D.112"):
                 # Touch events may be reported, but must not be treated as Q,
                 # SET or focus-related button presses.
-                for raw in (0x6B, 0x6C, 0x72, 0x73):
+                touches = (0x6B, 0x6C, 0x72, 0x73) if camera in ("700D.115", "650D.104") else (0x6F, 0x70, 0x76, 0x77)
+                for raw in touches:
                     assert lib.translate(raw) not in (9, 23, 29)
+            if camera == "100D.101":
+                # The combined Q/SET hardware event itself is not mapped to
+                # the portable Q key: ML uses the Av button instead.
+                assert lib.translate(0x1D) != 29

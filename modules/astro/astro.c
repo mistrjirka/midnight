@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * AstroML: plate solving, target guiding, polar alignment and star focus for Magic Lantern
- * on Canon 550D (1.0.9), 600D (1.0.2), 700D (1.1.5) and 6D (1.1.6).
- * done on the worker task (worker.c).
+ * on Canon EOS 550D/600D/650D/700D/100D/60D/1100D/70D/6D.
+ * Heavy work runs on the worker task (worker.c).
  */
 #include <module.h>
 #include <dryos.h>
@@ -16,14 +16,21 @@
 
 static unsigned int astro_init(void)
 {
-    if (!is_camera("550D", "1.0.9") && !is_camera("600D", "1.0.2") &&
-        !is_camera("700D", "1.1.5") && !is_camera("6D", "1.1.6")) {
+    if (!is_camera("550D", "1.0.9") &&
+        !is_camera("600D", "1.0.2") &&
+        !is_camera("650D", "1.0.4") &&
+        !is_camera("700D", "1.1.5") &&
+        !is_camera("100D", "1.0.1") &&
+        !is_camera("60D", "1.1.1") &&
+        !is_camera("1100D", "1.0.5") &&
+        !is_camera("70D", "1.1.2") &&
+        !is_camera("6D", "1.1.6")) {
         return CBR_RET_ERROR;
     }
-    /* This setting defaults to the 600D DISP / 6D light shortcut on old builds.
-     * 550D and 700D have no equivalent raw button. Default to Off here,
-     * preserving explicit INFO or half-shutter selections on those models. */
-    if ((is_camera("550D", "1.0.9") || is_camera("700D", "1.1.5")) &&
+    /* The legacy focus shortcut only exists on 600D DISP and 6D LCD-light.
+     * Disable it on the other models. Never intercept an unverified raw key.
+     * Explicit INFO or half-shutter options remain available. */
+    if (!is_camera("600D", "1.0.2") && !is_camera("6D", "1.1.6") &&
         astro_cfg_focus_shortcut == ASTRO_SHORTCUT_LIGHT) {
         astro_cfg_focus_shortcut = ASTRO_SHORTCUT_OFF;
     }

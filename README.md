@@ -1,8 +1,8 @@
 # Midnight
 
-Astronomy tools for **Magic Lantern on Canon 550D (1.0.9), 600D (1.0.2), 700D (1.1.5) and 6D (1.1.6)**.
+Astronomy tools for **Magic Lantern on nine Canon EOS cameras**: 100D, 550D, 600D, 650D, 700D, 1100D, 60D, 70D and 6D. Exact Canon firmware versions are in the [installation guide](docs/INSTALL.md).
 
-[Experimental four-camera release: v0.4.1-alpha.1](https://github.com/mistrjirka/midnight/releases/tag/v0.4.1-alpha.1) · [Installation and recovery guide](docs/INSTALL.md)
+[Experimental nine-camera release: v0.5.0-alpha.1](https://github.com/mistrjirka/midnight/releases/tag/v0.5.0-alpha.1) · [Installation and recovery guide](docs/INSTALL.md)
 
 ## Features
 
@@ -31,7 +31,7 @@ Its bundled synthetic sky solved with **11 matches in 0.19 s of emulator-reporte
 
 **Recommended:** update an existing compatible Magic Lantern card using the module-only ZIP. Back up the card, then extract the ZIP to the card root. Do not overwrite `autoexec.bin` when updating an existing Magic Lantern installation.
 
-See the [installation and recovery guide](docs/INSTALL.md) for all camera models. The new 550D and 700D builds are experimental: see the [550D guide](docs/550D_PORT.md) and [700D guide](docs/700D_PORT.md).
+See the [installation guide](docs/INSTALL.md), [new-camera test guide](docs/EASY_CAMERA_PORTS.md) and model-specific [550D](docs/550D_PORT.md) / [700D](docs/700D_PORT.md) notes. New ports need physical-camera validation.
 
 ## Source
 
@@ -47,4 +47,4 @@ Build and run tests:
 
 [Migration status](docs/MODULAR_MIGRATION.md) · [C code review](docs/C_CODE_REVIEW.md)
 
-**Safety:** The new 550D and 700D ports are not yet tested on physical cameras. Their Live View, gallery controls, available RAM and lens motors require on-camera checks. Use backups and the module-only archive for existing Magic Lantern installations.
+**Safety:** The newly added camera ports are compile-tested, not hardware-tested. Gallery solving, Live View, available RAM and lens motors require on-camera checks. Back up the card. Use module-only updates on existing compatible Magic Lantern installations.

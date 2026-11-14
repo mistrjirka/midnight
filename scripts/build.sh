@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reproducible Midnight 550D/600D/700D/6D build with the modular AstroML-derived code.
+# Reproducible Midnight 9-camera build with the modular AstroML-derived code.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ML="$ROOT/.build/magiclantern"
@@ -53,15 +53,25 @@ fi
 make -C "$ML/modules" -j"$JOBS"
 make -C "$ML/platform/550D.109" -j"$JOBS"
 make -C "$ML/platform/600D.102" -j"$JOBS"
+make -C "$ML/platform/650D.104" -j"$JOBS"
 make -C "$ML/platform/700D.115" -j"$JOBS"
+make -C "$ML/platform/100D.101" -j"$JOBS"
+make -C "$ML/platform/60D.111" -j"$JOBS"
+make -C "$ML/platform/1100D.105" -j"$JOBS"
+make -C "$ML/platform/70D.112" -j"$JOBS"
 make -C "$ML/platform/6D.116" -j"$JOBS"
 
 # A portable ARM module must import symbols exported by ALL firmware builds.
-for camera in 550D.109 600D.102 700D.115 6D.116; do
+for camera in 550D.109 600D.102 650D.104 700D.115 100D.101 60D.111 1100D.105 70D.112 6D.116; do
     case "$camera" in
         550D.109) sym="$ML/platform/$camera/build/550D_109.sym";;
         600D.102) sym="$ML/platform/$camera/build/600D_102.sym";;
         700D.115) sym="$ML/platform/$camera/build/700D_115.sym";;
+        650D.104) sym="$ML/platform/$camera/build/650D_104.sym";;
+        100D.101) sym="$ML/platform/$camera/build/100D_101.sym";;
+        60D.111) sym="$ML/platform/$camera/build/60D_111.sym";;
+        1100D.105) sym="$ML/platform/$camera/build/t3_105.sym";;
+        70D.112) sym="$ML/platform/$camera/build/70D_112.sym";;
         6D.116) sym="$ML/platform/$camera/build/6D_116.sym";;
     esac
     missing="$(comm -23 <(sort -u "$ML/modules/astro/build/astro.dep") \

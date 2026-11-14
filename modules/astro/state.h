@@ -13,8 +13,13 @@
 /* Sensor width in 0.1 mm. Select at runtime because ML modules are portable ARM objects. */
 #define ASTRO_550D_SENSOR_WIDTH_X10 223
 #define ASTRO_600D_SENSOR_WIDTH_X10 223
+#define ASTRO_650D_SENSOR_WIDTH_X10 223
 #define ASTRO_700D_SENSOR_WIDTH_X10 223
-#define ASTRO_6D_SENSOR_WIDTH_X10   358
+#define ASTRO_100D_SENSOR_WIDTH_X10 223
+#define ASTRO_60D_SENSOR_WIDTH_X10 223
+#define ASTRO_1100D_SENSOR_WIDTH_X10 220
+#define ASTRO_70D_SENSOR_WIDTH_X10 225
+#define ASTRO_6D_SENSOR_WIDTH_X10 358
 int astro_sensor_width_x10(void);
 
 #define ASTRO_DATA_DIR "ML/ASTRO/"
