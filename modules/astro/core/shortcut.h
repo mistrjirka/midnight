@@ -3,7 +3,7 @@
 #ifndef ASTRO_SHORTCUT_H
 #define ASTRO_SHORTCUT_H
 
-/* Physical buttons: 600D.102 BGMT_PRESS_DISP, 6D.116 BGMT_LIGHT. */
+/* Physical shortcut: 600D DISP or 6D LCD-light. 700D has no direct equivalent. */
 #define ASTRO_KEY_600D_DISP 0x08
 #define ASTRO_KEY_6D_LIGHT  0x20
 
