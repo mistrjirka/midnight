@@ -190,7 +190,7 @@ unsigned int astro_focus_key(unsigned int key)
     return 1;
 }
 
-/* DISP on the 600D and LCD-light on the 6D are raw Canon events. */
+/* DISP on 600D and LCD-light on 6D are raw events. The 700D has neither button. */
 unsigned int astro_focus_raw_key(unsigned int event_pointer)
 {
     struct event *event = (struct event *)(uintptr_t)event_pointer;
@@ -206,6 +206,7 @@ unsigned int astro_focus_raw_key(unsigned int event_pointer)
         /* Feed the common policy a camera-neutral special-button event. */
         key = ASTRO_KEY_6D_LIGHT;
     } else if (!is_camera("6D", "1.1.6")) {
+        /* Never steal the 700D touch or Q/INFO controls as a default shortcut. */
         return 1;
     }
     astro_shortcut_state state = {1, lv && !is_movie_mode() && display_idle(), gui_menu_shown(),
