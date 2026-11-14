@@ -3,7 +3,7 @@
 **Experimental. Physical 550D testing is pending.** The module and full
 Magic Lantern firmware build target Canon **550D firmware 1.0.9**.
 
-## Differences from Midnight's released camera targets
+## Differences from other Midnight camera targets
 
 | Camera | 550D | 600D | 6D |
 | --- | --- | --- | --- |

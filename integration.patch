@@ -38,6 +38,14 @@ index a3a888f..919ab25 100644
  selftest
  silent
 +astro
+diff --git a/platform/700D.115/modules.included b/platform/700D.115/modules.included
+--- a/platform/700D.115/modules.included
++++ b/platform/700D.115/modules.included
+@@ -18,3 +18,4 @@
+ sd_clock
+ selftest
+ silent
++astro
 diff --git a/src/menu.c b/src/menu.c
 index 7c0f3b8..19c26fd 100755
 --- a/src/menu.c

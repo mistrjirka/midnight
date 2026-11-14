@@ -2,8 +2,8 @@
 /*
  * Mirrors ML's existing photo-only display gain instead of writing registers ourselves.
  * set_display_gain_equiv() is avoided on purpose: in movie mode it changes recorded ISO.
- * Both functions below are exported by each supported firmware build.
- * The build checks for their presence, including on the 550D.
+ * These functions are exported by all supported firmware builds,
+ * and the build checks every camera-specific symbol table.
  */
 #include <dryos.h>
 #include <propvalues.h>

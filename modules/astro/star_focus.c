@@ -190,7 +190,7 @@ unsigned int astro_focus_key(unsigned int key)
     return 1;
 }
 
-/* DISP on the 600D and LCD-light on the 6D are raw events. The 550D has neither. */
+/* 600D DISP / 6D LCD-light are raw events. 550D/700D have neither. */
 unsigned int astro_focus_raw_key(unsigned int event_pointer)
 {
     struct event *event = (struct event *)(uintptr_t)event_pointer;
@@ -206,7 +206,7 @@ unsigned int astro_focus_raw_key(unsigned int event_pointer)
         /* Feed the common policy a camera-neutral special-button event. */
         key = ASTRO_KEY_6D_LIGHT;
     } else if (!is_camera("6D", "1.1.6")) {
-        /* Never intercept 550D Q, INFO or other raw events for autofocus. */
+        /* Never intercept 550D/700D Q, INFO, touch or other raw events. */
         return 1;
     }
     astro_shortcut_state state = {1, lv && !is_movie_mode() && display_idle(), gui_menu_shown(),

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reproducible Midnight 550D/600D/6D build with the modular AstroML-derived code.
+# Reproducible Midnight 550D/600D/700D/6D build with the modular AstroML-derived code.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ML="$ROOT/.build/magiclantern"
@@ -53,13 +53,15 @@ fi
 make -C "$ML/modules" -j"$JOBS"
 make -C "$ML/platform/550D.109" -j"$JOBS"
 make -C "$ML/platform/600D.102" -j"$JOBS"
+make -C "$ML/platform/700D.115" -j"$JOBS"
 make -C "$ML/platform/6D.116" -j"$JOBS"
 
-# A portable ARM module must import symbols exported by BOTH firmware builds.
-for camera in 550D.109 600D.102 6D.116; do
+# A portable ARM module must import symbols exported by ALL firmware builds.
+for camera in 550D.109 600D.102 700D.115 6D.116; do
     case "$camera" in
         550D.109) sym="$ML/platform/$camera/build/550D_109.sym";;
         600D.102) sym="$ML/platform/$camera/build/600D_102.sym";;
+        700D.115) sym="$ML/platform/$camera/build/700D_115.sym";;
         6D.116) sym="$ML/platform/$camera/build/6D_116.sym";;
     esac
     missing="$(comm -23 <(sort -u "$ML/modules/astro/build/astro.dep") \

@@ -1,25 +1,27 @@
 # Install or update Midnight
 
-Midnight is a Magic Lantern astronomy module for **Canon EOS 600D (firmware 1.0.2)** and **Canon EOS 6D (firmware 1.1.6)**.
+Midnight supports Canon EOS **550D (1.0.9)**, **600D (1.0.2)**, **700D (1.1.5)** and **6D (1.1.6)**. The 550D and 700D builds are experimental and not yet physically tested.
 
 **Already have working Magic Lantern?** Install the *module-only* ZIP. It updates `ML/modules/astro.mo` and the matching `ML/ASTRO/` catalogues without changing `autoexec.bin`, your camera firmware, the card boot flags, photographs, or existing ML settings.
 
-[Latest experimental release: v0.4.0-alpha.1](https://github.com/mistrjirka/midnight/releases/tag/v0.4.0-alpha.1)
+[Latest experimental release: v0.4.1-alpha.1](https://github.com/mistrjirka/midnight/releases/tag/v0.4.1-alpha.1)
 
 ## 1. Choose the right download
 
 First check your camera's **Firmware Ver.** in the Canon menu.
 
-| Camera / firmware | Existing compatible Magic Lantern card (recommended) | New compatible Magic Lantern installation |
+| Camera / firmware | Existing compatible Magic Lantern card (recommended) | Full Magic Lantern installation |
 | --- | --- | --- |
-| EOS 600D, **1.0.2** | [midnight-module-600D.102.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.0-alpha.1/midnight-module-600D.102.zip) | [magiclantern-astro-600D.102.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.0-alpha.1/magiclantern-astro-600D.102.zip) |
-| EOS 6D, **1.1.6** | [midnight-module-6D.116.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.0-alpha.1/midnight-module-6D.116.zip) | [magiclantern-astro-6D.116.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.0-alpha.1/magiclantern-astro-6D.116.zip) |
+| EOS 550D, **1.0.9** | [midnight-module-550D.109.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.1-alpha.1/midnight-module-550D.109.zip) | [magiclantern-astro-550D.109.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.1-alpha.1/magiclantern-astro-550D.109.zip) |
+| EOS 600D, **1.0.2** | [midnight-module-600D.102.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.1-alpha.1/midnight-module-600D.102.zip) | [magiclantern-astro-600D.102.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.1-alpha.1/magiclantern-astro-600D.102.zip) |
+| EOS 700D, **1.1.5** | [midnight-module-700D.115.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.1-alpha.1/midnight-module-700D.115.zip) | [magiclantern-astro-700D.115.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.1-alpha.1/magiclantern-astro-700D.115.zip) |
+| EOS 6D, **1.1.6** | [midnight-module-6D.116.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.1-alpha.1/midnight-module-6D.116.zip) | [magiclantern-astro-6D.116.zip](https://github.com/mistrjirka/midnight/releases/download/v0.4.1-alpha.1/magiclantern-astro-6D.116.zip) |
 
-**550D, firmware 1.0.9:** a new experimental port produces midnight-module-550D.109.zip and magiclantern-astro-550D.109.zip. These are **not** part of the v0.4.0-alpha.1 release. Download them from the successful 550D pull-request build artifact and consult the [550D port guide](550D_PORT.md) first.
+**550D and 700D:** before use, read the [550D](550D_PORT.md) or [700D](700D_PORT.md) hardware-testing guide. Their physical Live View, memory and controls are not yet validated.
 
 **Never install an archive for another camera or firmware version.** The *full* ZIP also carries camera-specific `autoexec.bin` and `ML-SETUP.FIR`. Use it only when you are setting up a compatible spare card and understand Magic Lantern's boot-card procedure.
 
-The optional [wide-field sky index](https://github.com/mistrjirka/midnight/releases/download/v0.4.0-alpha.1/magiclantern-astro-wide-index.zip) is only useful for very wide fields (roughly above 60°). You do not need it for most telescope lenses.
+The optional [wide-field sky index](https://github.com/mistrjirka/midnight/releases/download/v0.4.1-alpha.1/magiclantern-astro-wide-index.zip) is only useful for very wide fields (roughly above 60°). You do not need it for most telescope lenses.
 
 ## 2. Update an existing Magic Lantern card
 
