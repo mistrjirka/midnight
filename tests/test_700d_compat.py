@@ -25,6 +25,7 @@ STUBS = r"""
 #include "shortcut.h"
 #define CBR_RET_ERROR 1u
 #define ASTRO_ACTION_AUTOFOCUS 3
+#define ASTRO_SHORTCUT_OFF 0
 #define ASTRO_SHORTCUT_LIGHT 3
 static int model,firmware_ok,worker_start_ok=1,starts,menus,requests,readout;
 static int lv=1;
@@ -57,7 +58,7 @@ int raw(int key){
  struct event e={0,key};
  return (int)astro_focus_raw_key((uintptr_t)&e);
 }
-int get(int which){return which==0?starts:which==1?menus:which==2?requests:readout;}
+int get(int which){return which==0?starts:which==1?menus:which==2?requests:which==4?astro_cfg_focus_shortcut:readout;}
 """
 
 def _build(out: Path) -> C.CDLL:
@@ -90,6 +91,7 @@ def test_camera_firmware_gate_and_special_button():
             lib.reset(model, 1)
             assert lib.init() == 0
             assert lib.get(0) == 1 and lib.get(1) == 1
+            assert lib.get(4) == (0 if model == 3 else 3)
         for model in (0, 1, 2, 3):
             lib.reset(model, 0)
             assert lib.init() == 1, "unsupported firmware must refuse to load"

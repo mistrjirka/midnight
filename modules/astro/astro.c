@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
  * AstroML: plate solving, target guiding, polar alignment and star focus for Magic Lantern
- * on Canon 600D (1.0.2), 700D (1.1.5) or 6D (1.1.6). Entry points and callbacks; work is
+ * on Canon 550D (1.0.9), 600D (1.0.2), 700D (1.1.5) and 6D (1.1.6).
  * done on the worker task (worker.c).
  */
 #include <module.h>
@@ -16,9 +16,16 @@
 
 static unsigned int astro_init(void)
 {
-    if (!is_camera("600D", "1.0.2") && !is_camera("700D", "1.1.5") &&
-        !is_camera("6D", "1.1.6")) {
+    if (!is_camera("550D", "1.0.9") && !is_camera("600D", "1.0.2") &&
+        !is_camera("700D", "1.1.5") && !is_camera("6D", "1.1.6")) {
         return CBR_RET_ERROR;
+    }
+    /* This setting defaults to the 600D DISP / 6D light shortcut on old builds.
+     * 550D and 700D have no equivalent raw button. Default to Off here,
+     * preserving explicit INFO or half-shutter selections on those models. */
+    if ((is_camera("550D", "1.0.9") || is_camera("700D", "1.1.5")) &&
+        astro_cfg_focus_shortcut == ASTRO_SHORTCUT_LIGHT) {
+        astro_cfg_focus_shortcut = ASTRO_SHORTCUT_OFF;
     }
     if (!astro_worker_start()) {
         return CBR_RET_ERROR;

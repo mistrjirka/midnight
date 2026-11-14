@@ -3,7 +3,7 @@
 #ifndef ASTRO_SHORTCUT_H
 #define ASTRO_SHORTCUT_H
 
-/* Physical shortcut: 600D DISP or 6D LCD-light. 700D has no direct equivalent. */
+/* Special shortcut: 600D DISP or 6D LCD-light. None on 550D/700D. */
 #define ASTRO_KEY_600D_DISP 0x08
 #define ASTRO_KEY_6D_LIGHT  0x20
 

@@ -18,7 +18,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc-arm-none-eabi binutils-arm-none-eabi libnewlib-dev python3-docutils python3-numpy python3-scipy python3-typer python3-pil python3-pytest
-      - name: Reproduce both camera builds and run native tests
+      - name: Build all four camera platforms and run native tests
         run: PATH=/usr/bin:$PATH bash scripts/build.sh
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4

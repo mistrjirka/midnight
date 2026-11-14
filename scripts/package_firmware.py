@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = ("STARS.BIN", "STARS.IDX", "STARS.NAM", "SKY.DIR",
             "SKY.PAT", "SKY.FLD", "DSO.BIN", "DSO.KEY", "DSO.NAM", "CONST.BIN")
 WIDE = ("SKYW.DIR", "SKYW.PAT", "SKYW.FLD")
-CAMERAS = ("600D.102", "700D.115", "6D.116")
+CAMERAS = ("550D.109", "600D.102", "700D.115", "6D.116")
 
 CREDITS = """Midnight astronomy module (GPL-2.0-only combined work).
 Ported architecture by AstroML contributors from kubakubakuba/AstroML.

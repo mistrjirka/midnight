@@ -82,7 +82,8 @@ const char *astro_status(void)
 
 int astro_sensor_width_x10(void)
 {
-    return is_camera("600D", "1.0.2") ? ASTRO_600D_SENSOR_WIDTH_X10
+    return is_camera("550D", "1.0.9") ? ASTRO_550D_SENSOR_WIDTH_X10
+         : is_camera("600D", "1.0.2") ? ASTRO_600D_SENSOR_WIDTH_X10
          : is_camera("700D", "1.1.5") ? ASTRO_700D_SENSOR_WIDTH_X10
          : is_camera("6D", "1.1.6") ? ASTRO_6D_SENSOR_WIDTH_X10 : 0;
 }

@@ -12,6 +12,14 @@ index 152deda..9b7953a 100644
  
  .PHONY: clean $(BUILD_DIR)
  
+diff --git a/platform/550D.109/modules.included b/platform/550D.109/modules.included
+--- a/platform/550D.109/modules.included
++++ b/platform/550D.109/modules.included
+@@ -15,3 +15,4 @@
+ pic_view
+ selftest
+ silent
++astro
 diff --git a/platform/600D.102/modules.included b/platform/600D.102/modules.included
 index edc1dfb..efeebd2 100644
 --- a/platform/600D.102/modules.included

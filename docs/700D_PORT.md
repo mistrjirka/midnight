@@ -2,7 +2,7 @@
 
 **Status: experimental.** The module and firmware compile against Magic
 Lantern 700D.115 and pass host compatibility tests. The real 700D has not
-yet been tested. The current v0.4.0-alpha.1 release predates this port.
+yet been tested. It is included in the experimental v0.4.1-alpha.1 release.
 
 ## Differences from 600D and 6D
 

@@ -1,4 +1,4 @@
-"""Real 600D/700D/6D sensor selection and Live View controls, without hardware."""
+"""Real 550D/600D/700D/6D camera selection and Live View controls, without hardware."""
 import ctypes as C
 from pathlib import Path
 import subprocess
@@ -18,6 +18,7 @@ STUBS=r"""
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
+#define ASTRO_550D_SENSOR_WIDTH_X10 223
 #define ASTRO_600D_SENSOR_WIDTH_X10 223
 #define ASTRO_700D_SENSOR_WIDTH_X10 223
 #define ASTRO_6D_SENSOR_WIDTH_X10 358
@@ -31,7 +32,8 @@ static char last_status[128];
 static int is_camera(const char *name,const char *firmware){
  if(!strcmp(name,"600D")&&!strcmp(firmware,"1.0.2"))return model==1;
  if(!strcmp(name,"6D")&&!strcmp(firmware,"1.1.6"))return model==2;
- if(!strcmp(name,"700D")&&!strcmp(firmware,"1.1.5"))return model==3;
+ if(!strcmp(name,"550D")&&!strcmp(firmware,"1.0.9"))return model==3;
+ if(!strcmp(name,"700D")&&!strcmp(firmware,"1.1.5"))return model==4;
  return 0;
 }
 static int is_movie_mode(void){return movie;}
@@ -78,7 +80,7 @@ def test_camera_liveview():
         lib.value.argtypes=[C.c_int];lib.value.restype=C.c_int
         lib.change_at.argtypes=[C.c_int];lib.set_cancel.argtypes=[C.c_int]
         lib.status.restype=C.c_char_p
-        for model,width in [(0,0),(1,223),(2,358),(3,223)]:
+        for model,width in [(0,0),(1,223),(2,358),(3,223),(4,223)]:
             lib.reset(model,1,0,1,0)
             assert lib.sensor()==width
         for setup,message in [
@@ -86,12 +88,14 @@ def test_camera_liveview():
             ((1,1,1,1,0),b"Use photo mode, not movie mode"),
             ((1,1,0,5,0),b"Use 1x Live View, not 5x/10x"),
             ((1,1,0,1,1),b"Close playback before Live View solve"),
-            ((3,1,0,10,0),b"Use 1x Live View, not 5x/10x"),
+            ((3,1,0,5,0),b"Use 1x Live View, not 5x/10x"),
             ((3,0,0,1,0),b"Turn on 1x photo Live View first"),
+            ((4,1,0,5,0),b"Use 1x Live View, not 5x/10x"),
+            ((4,0,0,1,0),b"Turn on 1x photo Live View first"),
         ]:
             lib.reset(*setup);lib.click()
             assert lib.value(0)==0 and lib.value(1)==1 and lib.status()==message
-        for model in (1,2,3):
+        for model in (1, 2, 3, 4):
             lib.reset(model,1,0,1,0);lib.click()
             assert lib.value(0)==1 and lib.value(1)==0
             assert lib.stabilized()==1 and lib.value(2)==3000

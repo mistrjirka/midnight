@@ -375,8 +375,8 @@ static struct menu_entry astro_menu[] = {
                  .priv = &astro_cfg_focus_shortcut,
                  .max = 3,
                  .choices = CHOICES("Off", "Double half-press", "INFO button", "600D DISP / 6D light"),
-                 .help = "Special button unavailable on 700D. Choose INFO or half-press.",
-                 .help2 = "700D defaults to no special focus shortcut; use the focus menu."},
+                 .help = "550D/700D: no special button. Use Off, INFO or half-press.",
+                 .help2 = "600D: DISP; 6D: LCD light. Photo Live View only."},
                 MENU_EOL,
             },
     },
@@ -413,7 +413,7 @@ static struct menu_entry astro_menu[] = {
         .name = "Location",
         .select = menu_open_submenu,
         .update = location_position_update,
-        .help = "GPS-tagged latest photo (6D built-in GPS; 600D/700D need geotagged photos).",
+        .help = "GPS-tagged latest photo (6D built-in GPS; other bodies need geotagged photos).",
         .children =
             (struct menu_entry[]){
                 {.name = "Read newest photo",
