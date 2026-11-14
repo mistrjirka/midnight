@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = ("STARS.BIN", "STARS.IDX", "STARS.NAM", "SKY.DIR",
             "SKY.PAT", "SKY.FLD", "DSO.BIN", "DSO.KEY", "DSO.NAM", "CONST.BIN")
 WIDE = ("SKYW.DIR", "SKYW.PAT", "SKYW.FLD")
-CAMERAS = ("550D.109", "600D.102", "700D.115", "6D.116")
+CAMERAS = ('550D.109', '600D.102', '650D.104', '700D.115', '100D.101', '60D.111', '1100D.105', '70D.112', '6D.116')
 
 CREDITS = """Midnight astronomy module (GPL-2.0-only combined work).
 Ported architecture by AstroML contributors from kubakubakuba/AstroML.
@@ -26,6 +26,12 @@ OpenNGC: Mattia Verga (CC BY-SA 4.0).
 Barnard and Sharpless: CDS/VizieR VII/220A and VII/20.
 Constellation figures: d3-celestial, Olaf Frohn (BSD-3-Clause).
 """
+
+def gallery_instruction(camera: str) -> str:
+    # The EOS 100D uses the Av button as Magic Lantern's separate Q action.
+    if camera.startswith("100D."):
+        return "Gallery: Play -> Av (ML Q) -> SET."
+    return "Gallery: Play -> Q -> SET."
 
 def add_data(out: ZipFile, data: Path, names: tuple[str,...]) -> None:
     for name in names:
@@ -51,7 +57,7 @@ def package_all(data: Path, base: Path, module: Path, target: Path, camera: str)
             "Requires a matching camera firmware revision. Unmodified Canon bootloader.\n"
             "The full ZIP includes autoexec.bin: do not use it for a module-only update.\n"
             "The safer module-only ZIP preserves your existing Magic Lantern installation.\n"
-            "Menu: Trash -> Focus -> Midnight. Gallery: Play -> Q -> SET.\n"
+            f"Menu: Trash -> Focus -> Midnight. {gallery_instruction(camera)}\n"
             "Autofocus lens motors and on-camera photo playback remain hardware-experimental.\n")
         if (ROOT/"tests/data/TEST.PGM").exists():
             out.write(ROOT/"tests/data/TEST.PGM","ML/ASTRO/TEST.PGM")
@@ -71,7 +77,7 @@ def package_module(data: Path,module: Path,target: Path,camera: str) -> None:
           f"Midnight module-only update, Canon {camera}.\n"
           "Requires an existing compatible Magic Lantern installation.\n"
           "No firmware, boot flags, photos or existing settings are replaced.\n"
-          "Menu: Trash -> Focus -> Midnight. Gallery: Play -> Q -> SET.\n")
+          f"Menu: Trash -> Focus -> Midnight. {gallery_instruction(camera)}\n")
         if (ROOT/"tests/data/TEST.PGM").exists():
             z.write(ROOT/"tests/data/TEST.PGM","ML/ASTRO/TEST.PGM")
     with ZipFile(target) as z:

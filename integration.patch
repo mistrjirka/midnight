@@ -46,6 +46,46 @@ diff --git a/platform/700D.115/modules.included b/platform/700D.115/modules.incl
  selftest
  silent
 +astro
+diff --git a/platform/650D.104/modules.included b/platform/650D.104/modules.included
+--- a/platform/650D.104/modules.included
++++ b/platform/650D.104/modules.included
+@@ -18,3 +18,4 @@
+ sd_clock
+ selftest
+ silent
++astro
+diff --git a/platform/100D.101/modules.included b/platform/100D.101/modules.included
+--- a/platform/100D.101/modules.included
++++ b/platform/100D.101/modules.included
+@@ -18,3 +18,4 @@
+ sd_clock
+ selftest
+ silent
++astro
+diff --git a/platform/60D.111/modules.included b/platform/60D.111/modules.included
+--- a/platform/60D.111/modules.included
++++ b/platform/60D.111/modules.included
+@@ -17,3 +17,4 @@
+ selftest
+ sd_clock
+ silent
++astro
+diff --git a/platform/1100D.105/modules.included b/platform/1100D.105/modules.included
+--- a/platform/1100D.105/modules.included
++++ b/platform/1100D.105/modules.included
+@@ -13,3 +13,4 @@
+ mlv_snd
+ pic_view
+ sd_clock
++astro
+diff --git a/platform/70D.112/modules.included b/platform/70D.112/modules.included
+--- a/platform/70D.112/modules.included
++++ b/platform/70D.112/modules.included
+@@ -19,3 +19,4 @@
+ sd_clock
+ selftest
+ silent
++astro
 diff --git a/src/menu.c b/src/menu.c
 index 7c0f3b8..19c26fd 100755
 --- a/src/menu.c
